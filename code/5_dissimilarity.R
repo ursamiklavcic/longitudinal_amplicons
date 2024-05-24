@@ -33,83 +33,105 @@ otutabEM_allabund = as.data.frame(otutabEM) %>%
 
 otutabM_allabund = filter(otutabEM_allabund, substr(Group, 1, 1) == 'M')
 
-otutab_fin = otutabM_allabund %>%
-  select(Group, name, count) %>%
-  pivot_wider(names_from = 'name', values_from = 'count') %>%
+tab = otutabM_allabund %>%
+  select(Group, name, absabund) %>%
+  pivot_wider(names_from = 'name', values_from = 'absabund') %>%
   left_join(select(metadata, Group, day, person)) %>%
   column_to_rownames('Group') 
 
+# translation as best as I understand, 
+# computephi_i <- function(n1, n2) {    
+#     n1 <- equalize(n1, n2)  
+#     n2 <- equalize(n2, n1)  # naredi absolute abundances
+#     d <- n1 - n2 #izračuna d ki je reazlika med obema 
+#     s <- n1 + n2  # izračuna s ki je sešetevek med obema OTUjema 
+#     d <- d[-length(d)]  # odšeteje tiste ki jih ni v obeh točakh  oz unassigned OTUs, ki jih jaz nimam 
+#     s <- s[-length(s)]  # leave out unassigned
+#     phi <- (d^2 - s) / (s^2 - s) # izračuna phi vrednost 
+#     
+#     return(phi) 
+# }   
 
-# equalize; this function ensures that count of OTU from 2 samples is comparable, 
-# by downsampling counts from 1. sample to mach the total cout of the second sample is necessary 
+
+computephi_i <- function(n1, n2) {  # funkcija vazme vse OTUje točke t in t+1
+  n1 <- equalize(n1, n2)  # naredi abslutene zastopanosti 
+  n2 <- equalize(n2, n1)
+  d <- n1 - n2
+  s <- n1 + n2
+  d <- d[-length(d)]  # leave out unassigned
+  s <- s[-length(s)]  # leave out unassigned
+  phi <- (d^2 - s) / (s^2 - s)
+  return(phi)
+}
+
 equalize <- function(n1, n2) {
   n <- sum(n2)
   if (sum(n1) <= n) {
     return(n1)
   } else {
-    list <- unlist(lapply(1:length(n1), function(i) rep(i, n1[i])))
-    downsampled <- sample(list, n)
-    n_new <- table(factor(downsampled, levels = 1:length(n1)))
-    return(as.numeric(n_new))
+    list <- unlist(map(seq_along(n1), ~rep(.x, n1[.x])))
+    downsampled <- sample(list, n, replace = TRUE)
+    n_new <- tabulate(downsampled, length(n1))
+    return(n_new)
   }
 }
 
-# computephi_i; this function computes phi_i value between t and t+T for OTU_i
-compute_phi_i <- function(n1, n2) {
-  # Equalize counts
-  n1 <- equalize(n1, n2)
-  n2 <- equalize(n2, n1)
-  # Compute dissimilarity measure
-  di <- n1 - n2
-  si <- n1 + n2
-  phi_i <- di^2 / si
-  return(phi_i)
+# Split data by individual
+individuals = split(tab, tab$person)
+
+# Initialize the list to store time intervals for each individual
+T <- vector("list", 9)
+
+# Loop over each individual by name
+for (i in 1:9) {
+  times <- select(individuals[[i]], day)  # Assuming abd is now indexed by individual names
+  spans <- max(times) - min(times)
+  T[[i]] <- 1:span
 }
 
-# Initialize lists to store results
-Phi_i <- vector("list", 9)
-T <- vector("list", 9)
-meanPhi <- vector("list", 9)
-unique_individuals <- unique(otutab_fin$person)
+# 
+Phi_i <- vector("list", length(tab))
 
-# For each individual k and value of T, Phi_i[[k]][[i]] contains all the Phi_i(t,T) 
-# that can be computed for each OTU (for different values of t)
-for (person_idx in seq_along(unique_individuals)) {
-  person_id <- unique_individuals[person_idx]
-  # Extract data for the current person
-  person_data <- otutab_fin %>% filter(person == person_id)
-
-  # Determine the range of possible time spans T
-  times <- person_data$day
-  span <- max(times) - min(times)
-  T[[person_id]] <- 1:span
-  Phi_i[[person_id]] <- vector("list", length(T[[person_id]]))
-
-  for (i in seq_along(T[[person_id]])) {
-    for (t in min(times):(max(times) - T[[person_id]][i])) {
-      t1_data <- person_data %>% filter(day == t)
-      t2_data <- person_data %>% filter(day == t + T[[person_id]][i])
-
-      if (nrow(t1_data) > 0 & nrow(t2_data) > 0) {
-        n1 <- t1_data %>% select(-person, -day) %>% as.numeric()
-        n2 <- t2_data %>% select(-person, -day) %>% as.numeric()
-        Phi_i[[person_id]][[i]] <- rbind(Phi_i[[person_id]][[i]], compute_phi_i(n1, n2))
+# For each individual for all combinations of time_points (days) calculate the dissimilarity 
+for (k in 1:9) { # za vsakega posazmenika vzamemo njegov data.frame 
+  times = select(individuals[[k]], day) # povelečemo ven vse časovne točke tega posameznika 
+  Phi_i[[k]] <- vector("list", length(T[[k]]))
+  for (i in 1:length(T[[k]])) {  # za vse možne časovne razlike 1 do 154 npr je 1, 2, 3, etc. 
+    for (t in 1:max(times) - T[[k]][[i]]) { # za vse vrednosti max dan - 1, 2, 3, 4, etc. 
+      t1 = individuals[[k]]$day == t  # poglej ali posameznik ima to točko 
+      t2 = individuals[[k]]$day == t + T[[k]][i] # in poglej ali posameznik ima točko, ki se razlikuje za T od te točke?
+      if (any(t1) && any(t2)) {  # Check if both t1 and t2 have any true values
+        if ("day" %in% colnames(individuals[[k]]) && "person" %in% colnames(individuals[[k]])) {
+          n1 <- individuals[[k]][t1, -which(names(individuals[[k]]) %in% c("day", "person"))]
+          n2 <- individuals[[k]][t2, -which(names(individuals[[k]]) %in% c("day", "person"))]
+        } else {
+          n1 <- individuals[[k]][t1, ]
+          n2 <- individuals[[k]][t2, ]
+        }
+      Phi_i[[k]][[i]] = rbind(Phi_i[[k]][[i]], computephi_i(n1, n2)) # Append result of computephi_i to Phi_i
       }
     }
   }
 }
 
-# Compute the mean Phi_i(T)
-for (person_idx in seq_along(unique_individuals)) {
-  person_id <- unique_individuals[person_idx]
-  N_OTU <- ncol(otu_table) - 2
-  meanPhi[[person_id]] <- matrix(NA, nrow = N_OTU, ncol = length(T[[person_id]]) + 1)
+meanPhi = vector('list', 9)
 
-  for (i in seq_along(T[[person_id]]) + 1) {
-    if (nrow(Phi_i[[person_id]][[i]]) > 5) {
-      meanPhi[[person_id]][, i] <- colMeans(Phi_i[[person_id]][[i]], na.rm = TRUE)
-    } else {
-      meanPhi[[person_id]][, i] <- rep(NA, N_OTU)
-    }
-  }
+for (k in 1:9) {
+  number_otus = ncol(individuals[[k]]) - 2  # count the number of OTUs in a data.frame and -2 is for the columns day and person
+  meanPhi[[k]] = matrix(NA, nrow = number_otus, ncol = length(T[[k]] + 2))
 }
+
+## Again my understanding of the code 
+
+tab %>%
+  group_by(person) %>%
+  # calucltate phi for each OTU for each time point against all other time points and take the mean? 
+  
+
+
+
+
+
+
+
+
