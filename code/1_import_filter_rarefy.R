@@ -63,7 +63,8 @@ saveRDS(taxtab, 'data/r_data/taxonomy.RDS')
 # Import metadata
 metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   mutate(date=dmy(date)) %>%
-  filter(Group %in% rownames(otutabEM))
+  filter(Group %in% rownames(otutabEM)) %>%
+  mutate(biota = ifelse(biota == 'microbiota', 'Microbiota', 'Ethanol resistant fraction'))
 
 saveRDS(metadata, 'data/r_data/metadata.RDS')
 
