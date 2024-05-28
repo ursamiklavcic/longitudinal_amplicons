@@ -42,32 +42,39 @@ otutabEM_long %>%
   summarize(relsum = sum(value)) %>%
   mutate(percentage = (relsum/sum(relsum))*100) %>% 
   mutate(taxon_fin = ifelse(percentage < 0.1, 'Other (less than 0.1%)', taxon)) %>%
-  ggplot(aes(x=biota, y=percentage, fill=taxon_fin)) +
+  ggplot(aes(x=person, y=percentage, fill=taxon_fin)) +
   geom_bar(stat = 'identity') +
-  facet_grid(~person)
-ggsave('plots/relabundEtVSm.png', dpi=600)
-
-
+  facet_wrap(vars(biota)) +
+  labs(x ='', y='Relative abundance', fill = 'Class') +
+  theme(axis.text.x = element_text(angle=45, hjust=1))
+ggsave('out/ethanol_resistantVSmicrobiota/relabund_barplot.png', dpi=600)
 
 ## Absolute composition
-taxtab = readRDS('data/r_data/taxonomy.RDS')
-otutab_absrel_plot= otutab_absrel %>% left_join(taxtab, by = 'name') %>%
-  pivot_longer(names_to = 'level', values_to = 'taxon', cols=17:22) %>%
-  filter(level == 'Phylum') %>%
-  left_join(metadata, by = 'Group') %>%
-  group_by(person, time_point, taxon) %>%
-  summarize(sum_relabund = sum(rel_abund), 
-            sum_abs_ng = sum(abs_abund_ng), 
-            sum_abs_ul = sum(abs_abund_ul)) %>%
-  pivot_longer(values_to = 'value', names_to = 'name', cols=4:6)
+otutab_absrel_long = otutab_absrel %>%
+  left_join(taxtab, by = 'name') %>%
+  pivot_longer(names_to = 'level', values_to = 'taxon', cols=6:11) %>%
+  left_join(metadata, by = 'Group')
 
-otutab_abs_rel_plot %>% 
-  ggplot(aes(x=taxon, y=value, color=name)) +
-  geom_boxplot() +
-  scale_y_log10() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  facet_grid(rows = vars(person))
-ggsave('data/absolute_quantification/plots/difference.png', dpi=600)
+p1 = otutab_absrel_long %>%
+  filter(level == 'Class' & biota == 'Microbiota') %>%
+  group_by(biota, person, taxon) %>%
+  summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
+  mutate(taxon_fin = ifelse(abssum < 1E+10, 'Other (less 1E+10)', taxon)) %>%
+  ggplot(aes(x = person, y = abssum, fill = taxon_fin)) +
+  geom_bar(stat = 'identity', position = 'fill') +
+  labs(x ='', y='Sum absolute abundance', fill = 'Class', title = 'Microbiota') 
+
+p2 = otutab_absrel_long %>%
+  filter(level == 'Class' & biota == 'Ethanol resistant fraction') %>%
+  group_by(biota, person, taxon) %>%
+  summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
+  mutate(taxon_fin = ifelse(abssum < 1E+5, 'Other (less 1E+5)', taxon)) %>%
+  ggplot(aes(x = person, y = abssum, fill = taxon_fin)) +
+  geom_bar(stat = 'identity', position = 'fill') +
+  labs(x ='', y='Sum absolute abundance', fill = 'Class', title = 'Ethanol resistant fraction') 
+
+ggarrange(p1, p2)
+ggsave('out/ethanol_resistantVSmicrobiota/absabund_barplot.png', dpi=600)
 
 
 ##
