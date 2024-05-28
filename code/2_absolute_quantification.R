@@ -68,22 +68,3 @@ otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   filter(!is.na(Well))
 
 saveRDS( otutab_absrel, 'data/r_data/otutab_absabund.RDS')
-
-taxtab = readRDS('data/r_data/taxonomy.RDS')
-otutab_absrel_plot= otutab_absrel %>% left_join(taxtab, by = 'name') %>%
-  pivot_longer(names_to = 'level', values_to = 'taxon', cols=17:22) %>%
-  filter(level == 'Phylum') %>%
-  left_join(metadata, by = 'Group') %>%
-  group_by(person, time_point, taxon) %>%
-  summarize(sum_relabund = sum(rel_abund), 
-            sum_abs_ng = sum(abs_abund_ng), 
-            sum_abs_ul = sum(abs_abund_ul)) %>%
-  pivot_longer(values_to = 'value', names_to = 'name', cols=4:6)
-
-otutab_abs_rel_plot %>% 
-  ggplot(aes(x=taxon, y=value, color=name)) +
-  geom_boxplot() +
-  scale_y_log10() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  facet_grid(rows = vars(person))
-ggsave('data/absolute_quantification/plots/difference.png', dpi=600)
