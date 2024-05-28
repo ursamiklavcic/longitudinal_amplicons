@@ -48,9 +48,9 @@ ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_re
   rbind(read.quantasoft('data/absolute_quantification/20240513_ddPCR_v3v4_sporobiota_2_results_updated.csv') %>% 
           mutate(plate = 5)) %>%
   left_join(samples_info, by =join_by('Sample'=='Group')) %>%
-  filter(AcceptedDroplets > 12000) %>%
+  filter(AcceptedDroplets > 10000) %>%
   # Calculate the copy number of 16s rRNA gene per ng of DNA
-  mutate(CopiesPerngDNA = ((Concentration * 25 * dilution_ddPCR)/DNAconc_seq)*DNAconc)
+  mutate(CopiesPerngDNA = ((Concentration * 25 * dilution_ddPCR )/(5))*DNAconc)
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 # Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
