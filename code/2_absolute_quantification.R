@@ -32,6 +32,7 @@ read.quantasoft = function(file) {
     mutate(across(c(Well, Sample), ~gsub('"', '', .)))
 
 }
+
 # 
 samples_info = read_excel('data/vzorci.xlsx', sheet = 6)
 
@@ -47,9 +48,9 @@ ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_re
   rbind(read.quantasoft('data/absolute_quantification/20240513_ddPCR_v3v4_sporobiota_2_results_updated.csv') %>% 
           mutate(plate = 5)) %>%
   left_join(samples_info, by =join_by('Sample'=='Group')) %>%
+  filter(AcceptedDroplets > 12000) %>%
   # Calculate the copy number of 16s rRNA gene per ng of DNA
-  mutate(CopiesPerngDNA = (Concentration * 25 * dilution_ddPCR)/DNAconc_seq, 
-         CopiesPerSample = CopiesPerngDNA * DNAconc)
+  mutate(CopiesPerngDNA = ((Concentration * 25 * dilution_ddPCR)/DNAconc_seq)*DNAconc)
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 # Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
@@ -63,8 +64,8 @@ otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   group_by(Group) %>%
   mutate(rel_abund = value/sum(value)) %>%
   ungroup() %>%
-  mutate(abs_abund_ng = rel_abund*CopiesPerngDNA, 
-         abs_abund_ul = rel_abund*CopiesPerSample) %>%
-  filter(!is.na(Well))
+  mutate(abs_abund_ng = rel_abund*CopiesPerngDNA) %>%
+  filter(!is.na(Well)) %>%
+  select(Group, name, value, rel_abund, abs_abund_ng)
 
 saveRDS( otutab_absrel, 'data/r_data/otutab_absabund.RDS')
