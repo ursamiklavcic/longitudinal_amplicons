@@ -8,8 +8,6 @@ library(tidyverse)
 library(vegan)
 library(lubridate)
 library(ape)
-library(ggrepel)
-library(ggpubr)
 
 set.seed(96)
 theme_set(theme_bw())
@@ -22,7 +20,7 @@ shared = read_tsv('data/mothur/final.opti_mcc.shared') %>%
 
 # Min number of reads in sample and min sequences per OTU as determined in the exploration analysis
 reads_per_sample = 150000 # we loose 6 samples
-min_seqs_per_otu = sum(shared$value)*0.0001
+min_seqs_per_otu = sum(shared$value)*0.000001 # remove 0.0001% which is 0.000001
 
 shared_pre = shared %>%
   group_by(Group) %>%
@@ -40,7 +38,8 @@ shared_pre = shared %>%
   select(-sum_otus, -sum_sample)
 
 # Data for EtOH-EMA fraction VS microbiota samples 
-otutabEM_pre = pivot_wider(names_from = 'name', values_from = 'value') %>%
+otutabEM_pre = shared_pre %>%
+  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
 # Rarefy the data once - as we sequenced so deep that for the first analysis this is not crucial !
@@ -67,7 +66,6 @@ metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   filter(Group %in% rownames(otutabEM))
 
 saveRDS(metadata, 'data/r_data/metadata.RDS')
-
 
 # Data for sporobiota VS microbiota 
 otu_long = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
@@ -96,13 +94,13 @@ saveRDS(otutabSM, 'data/r_data/otutabSM.RDS')
 ## 
 # Phylogenetic analysis 
 # Load tree file from mafft 
-tree_pre = read.tree('data/phylo_analysis/fasttree_mafft_align.tree')
+tree_pre = ape::read.tree('data/phylo_analysis/fasttree_mafft_align.tree')
 
 # Final count table (before making OTUs)
 counttab = read.table('data/phylo_analysis/final.full.count_table', header = TRUE, sep = "\t") 
 
 # Min number of reads in sample and min sequences per OTU as determined in the exploration analysis
-min_seqs = sum(counttab$total)*0.0001
+min_seqs = sum(counttab$total)*0.000001
 
 # Statistics
 counttab_stat = counttab %>% 
@@ -114,25 +112,28 @@ counttab_stat = counttab %>%
   group_by(Group) %>%
   summarize(sum = sum(value))
 
-max(counttab_stat$sum)
-min(counttab_stat$sum)
-mean(counttab_stat$sum) 
+# Number of reads per sample 
+max(counttab_stat$sum) #880447
+min(counttab_stat$sum) #59870
+mean(counttab_stat$sum) #264166.3
+median(counttab_stat$sum) #230052.5
 
-# stat on sequences
+# Stat on sequences
 counttab_stat_seq = counttab %>% 
   pivot_longer(names_to = 'Group', values_to = 'value', cols = c(starts_with("S"), starts_with("M"))) %>%
-  filter(total > 1)
-min(counttab_stat_seq$total)
-max(counttab_stat_seq$total)
-mean(counttab_stat_seq$total)
-sum(counttab_stat_seq$total)
+  filter(total > min_seqs)
 
-# Get the name of samples that have less than 100 000 reads per sample!
+min(counttab_stat_seq$total) #63
+max(counttab_stat_seq$total) #13963206
+mean(counttab_stat_seq$total) #17416.4
+median(counttab_stat_seq$total) #208
+
+# Get the name of samples that have less than 150 000 reads per sample!
 # Remove sequneces with less than 10 reads all togther !
 # filter counttab 
 seqtab_pre = counttab %>% 
   # remove sequences with less than 10 reads
-  filter(total > min_seqs_per_otu) %>%
+  filter(total > min_seqs) %>%
   pivot_longer(names_to = 'Group', values_to = 'value', cols = c(starts_with("S"), starts_with("M")) ) %>%
   group_by(Group) %>%
   # Count the number of reads in each sample
@@ -148,7 +149,7 @@ seqtab_pre1 = select(seqtab_pre, Representative_Sequence, Group, value) %>%
   column_to_rownames('Representative_Sequence')
 
 # rarefy the table to 100 000 reads per sample
-seqtab =  rrarefy(t(seqtab_pre1), sample=100000) %>% as.data.frame()
+seqtab =  rrarefy(t(seqtab_pre1), sample=reads_per_sample) %>% as.data.frame()
 
 # Taxonomy 
 seq_taxtab = read.csv('data/phylo_analysis/final.taxonomy', header=FALSE, sep='\t') %>%
@@ -166,9 +167,9 @@ seq_metadata = read.csv('data/metadata.csv', sep=';') %>%
   mutate(date=dmy(date)) %>% 
   filter(Group %in% rownames(seqtab))
 
-# Make sure that sequences that we filtered (only have 1 read or less) are removed from the tree as well 
-tree = drop.tip(phy=tree_pre, 
-                tip=setdiff(tree$tip.label, colnames(seqtab)))
+# Make sure that sequences that we filtered are removed from the tree as well 
+tree = ape::drop.tip(phy=tree_pre, 
+                tip=setdiff(tree_pre$tip.label, colnames(seqtab)))
 
 saveRDS(seqtab, 'data/r_data/seqtab.RDS')
 saveRDS(seq_taxtab, 'data/r_data/seq_taxtab.RDS')
@@ -184,9 +185,10 @@ rm(tree_pre)
 rm(counttab)
 rm(counttab_stat_seq)
 rm(counttab_stat)
-rm(info1)
-rm(info2)
-rm(reads_per_OTU)
+rm(min_seqs)
+rm(min_seqs_per_otu)
+rm(otu_names)
+rm(reads_per_sample)
 
 # Data saved in data/r_data as RDS objects
 # and as basic_data.R (enviroment)
