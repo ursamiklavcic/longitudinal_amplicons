@@ -14,76 +14,15 @@ library(ggpubr)
 set.seed(96)
 theme_set(theme_bw())
 
-# Colors 
-colm=c('#47B66A')
-cole=c('#D9A534')
-cols=c('#2294E3')
-colem= c('#47B66A', '#D9A534')
-colsm=c('#47B66A', '#2294E3')
-colesm=c('#47B66A', '#D9A534', '#2294E3')
-individuals = c('#e02416','#f2990a', '#127a10', '#1e9c99', 
-                '#5f71e8', '#a34ce6', '#d609b1', '#e4e805', '#eb0e6a')
 
 # Exploration
 shared = read_tsv('data/mothur/final.opti_mcc.shared') %>%
   select(Group, starts_with('Otu')) %>%
   pivot_longer(-Group)
 
-# Distribution of reads per sample 
-shared %>%
-  group_by(Group) %>%
-  summarize(ReadsPerSample=sum(value)) %>%
-  ggplot(aes(x=ReadsPerSample)) +
-  geom_histogram() +
-  scale_x_continuous(breaks = seq(0, 800000, by=50000)) +
-  scale_y_continuous(breaks = seq(0,40, by=5))
-ggsave('exploration/reads_per_sample.png', dpi=600)
-
-# How min/max/mean/sum reads per sample/all samples
-info1 = shared %>%
-  group_by(Group) %>%
-  summarize(ReadsPerSample=sum(value)) %>% 
-  filter(Group != 'SNC') %>% filter(Group != 'MNC')
-min(info1$ReadsPerSample)
-max(info1$ReadsPerSample)
-mean(info1$ReadsPerSample)
-sum(info1$ReadsPerSample)
-
-# Distribution of OTUs
-shared %>%
-  group_by(name) %>%
-  summarize(OTUabundance=sum(value)) %>%
-  ggplot(aes(x=OTUabundance)) +
-  geom_histogram(breaks=seq(0, 20, by =5))
-ggsave('exploration/reads_per_OTU.png', dpi=600)
-
-# How min/max/mean reads per OTU
-info2 = shared %>%
-  group_by(name) %>%
-  summarize(OTUabundance=sum(value))
-min(info2$OTUabundance)
-max(info2$OTUabundance)
-mean(info2$OTUabundance)
-
-# Total number of redas in the dataset before removing anything! 
-sum(shared$value) #62226327
-
-reads_per_OTU = shared %>%
-  group_by(name) %>%
-  summarize(OTUabundance=sum(value))
-
-# How many OTUs have less thaN 10 reads
-length(reads_per_OTU$OTUabundance < 10)
-# How many reads do they contain
-sum(reads_per_OTU$OTUabundance < 10)
-# In percent of all reads
-sum(reads_per_OTU$OTUabundance < 10)/sum(reads_per_OTU$OTUabundance)*100
-
-# We loose xy OTUs, but this represents only xy of all reads 
-
-reads_per_sample = 100000
-# After sequencing we are removing OTus with less than 10 reads
-min_seqs_per_otu = 10
+# Min number of reads in sample and min sequences per OTU as determined in the exploration analysis
+reads_per_sample = 150000 # we loose 6 samples
+min_seqs_per_otu = sum(shared$value)*0.0001
 
 shared_pre = shared %>%
   group_by(Group) %>%
@@ -100,15 +39,15 @@ shared_pre = shared %>%
   ungroup() %>%
   select(-sum_otus, -sum_sample)
 
-## 
 # Data for EtOH-EMA fraction VS microbiota samples 
-otutabEM_pre = dcast(shared_pre, Group ~ name, value.var = 'value')
+otutabEM_pre = pivot_wider(names_from = 'name', values_from = 'value') %>%
+  column_to_rownames('Group')
 
 # Rarefy the data once - as we sequenced so deep that for the first analysis this is not crucial !
-otutabEM = rrarefy(otutabEM_pre  %>% column_to_rownames('Group'), sample=100000)
+otutabEM = rrarefy(otutabEM_pre, sample=reads_per_sample)
 saveRDS(otutabEM, 'data/r_data/otutabEM.RDS')
 
-# Extract OTUs that are present in otu_rare
+# Extract OTUs that are present rarefied table 
 otu_names = as.data.frame(otutabEM) %>% colnames() 
 
 # Import taxonomy table
@@ -127,12 +66,9 @@ metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   mutate(date=dmy(date)) %>%
   filter(Group %in% rownames(otutabEM))
 
-metadata = metadata %>%
-  rbind(metadata %>% filter(substr(Group, 1, 1) == 'S') %>%
-          mutate(Group = sub('^S', 'E', Group)) )
-saveRDS(metadata, 'data/r_data/otu_metadata.RDS')
+saveRDS(metadata, 'data/r_data/metadata.RDS')
 
-##
+
 # Data for sporobiota VS microbiota 
 otu_long = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
   pivot_longer(cols = starts_with('Otu')) %>%
@@ -165,10 +101,12 @@ tree_pre = read.tree('data/phylo_analysis/fasttree_mafft_align.tree')
 # Final count table (before making OTUs)
 counttab = read.table('data/phylo_analysis/final.full.count_table', header = TRUE, sep = "\t") 
 
+# Min number of reads in sample and min sequences per OTU as determined in the exploration analysis
+min_seqs = sum(counttab$total)*0.0001
+
 # Statistics
 counttab_stat = counttab %>% 
-  # remove sequences with less than 10 read or less
-  filter(total > min_seqs_per_otu) %>%
+  filter(total > min_seqs) %>%
   pivot_longer(names_to = 'Group', values_to = 'value', cols = c(starts_with("S"), starts_with("M")) ) %>%
   # remove negative controls
   filter(Group != 'SNC') %>%
