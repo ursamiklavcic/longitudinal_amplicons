@@ -511,26 +511,14 @@ ps = phyloseq(otu_table(as.matrix(seqtab), taxa_are_rows = FALSE),
               tax_table(as.matrix(seq_taxtab)), 
               phy_tree(tree))
 
-unifrac_w = UniFrac(ps, weighted = TRUE, normalized = FALSE, parallel = TRUE)
-# PCoA  weighted 
+# Weighted
+unifrac_w = UniFrac(ps, weighted = TRUE, normalized = FALSE)
+
 pcoa = cmdscale(unifrac_w, k=10, eig=TRUE, add=TRUE)
 positions = pcoa$points
 colnames(positions) <- c('pcoa1', 'pcoa2', 'pcoa3', 'pcoa4', 'pcoa5', 'pcoa6', 'pcoa7', 'pcoa8', 'pcoa9', 'pcoa10')
 
 percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
-pretty_pe = format(round(percent_explained[1:2], digits = 1), nsmall = 1, trim=TRUE)
-# library(glue)
-# labs = c(glue('PCo 1 ({pretty_pe[1]}%)'), 
-#          glue('PCo 1 ({pretty_pe[2]}%)'))
-
-# Aggregate to find the number of distinct groups
-result <- aggregate(Group ~ person.x, data = dist_jaccard, FUN = function(x) length(unique(x)))
-
-# Rename the columns for clarity
-colnames(result) <- c("person.x", "n_distinct_groups")
-
-print(result)
-
 
 positions %>%
   as_tibble(rownames = 'Group') %>%
@@ -538,16 +526,12 @@ positions %>%
   ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
   geom_point(size=4) +
   #scale_color_manual(values = colsm) + 
-  labs(x=labs[1], y=labs[2])+
-  theme_bw()
+  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
+       y=paste0(round(percent_explained[2], digits = 1), '%'), 
+       color = 'Individual') 
+ggsave('out/ethanol_resistantVSmicrobiota/PCOA_weighted.png', dpi=600)
 
-tibble(pe=cumsum(percent_explained), 
-       axis=1:length(percent_explained)) %>%
-  ggplot(aes(x=axis, y=pe)) +
-  geom_line() +
-  coord_cartesian(xlim=c(1,10))
-
-# PCoA only explains in 2 axis 20% of variation of my data 
+# PCoA only explains in 2 axis 30% of variation of my data 
 
 # Distance to centroid for each individual 
 rownames_to_column(as.data.frame(positions), 'Group') %>%
@@ -557,36 +541,26 @@ rownames_to_column(as.data.frame(positions), 'Group') %>%
   reframe(centroid = mean(pcoa1))
 
 # PCoA unweighted 
-unifrac_u = UniFrac(ps, weighted = FALSE, parallel = TRUE)
+unifrac_u = UniFrac(ps, weighted = FALSE)
 pcoa = cmdscale(unifrac_u, k=2, eig=TRUE, add=TRUE)
 positions = pcoa$points
 colnames(positions) <- c('pcoa1', 'pcoa2')
 
-saveRDS(positions, 'data/positions_u.RDS')
-
 percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
-pretty_pe = format(round(percent_explained[1:2], digits = 1), nsmall = 1, trim=TRUE)
-labs = c(glue('PCo 1 ({pretty_pe[1]}%)'), 
-         glue('PCo 1 ({pretty_pe[2]}%)'))
 
 positions %>%
   as_tibble(rownames = 'Group') %>%
   left_join(metadata, by='Group') %>%
   ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
   geom_point(size=3) +
-  #scale_color_manual(values = colsm) + 
-  labs(x=labs[1], y=labs[2]) +
-  theme_bw()
-
-tibble(pe=cumsum(percent_explained), 
-       axis=1:length(percent_explained)) %>%
-  ggplot(aes(x=axis, y=pe)) +
-  geom_line() +
-  coord_cartesian(xlim=c(1,10))
-
+  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
+       y=paste0(round(percent_explained[2], digits = 1), '%'), 
+       color = 'Individual') 
+ggsave('out/ethanol_resistantVSmicrobiota/PCOA_unweighted.png', dpi=600)
+# PCoA only explains in 2 axis ~30% of variation of my data 
 
 # Calculate if there is a difference in the distance between samples of individuals if they were; 
-# sampled closer together and more appart between microbiota and sporobiota. 
+# sampled closer together and more appart between microbiota and ethanol resistant fraction 
 unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
   rownames_to_column('Group') %>%
   pivot_longer(-Group) %>%
@@ -595,18 +569,16 @@ unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
   left_join(metadata  %>% select(Group, person, date, biota), by='Group') %>%
   # Filter so that I have only inter-person comparisons!
   mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
-         which_biota= ifelse(biota.x == 'microbiota' & biota.y == 'microbiota', 'Microbiota',
-                             ifelse(biota.x == 'sporobiota' & biota.y == 'sporobiota', 'Sporobiota', 'Both'))) %>%
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
   filter(which_biota != 'Both')
 
 unifracW_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   geom_boxplot() +
-  #geom_violin(draw_quantiles = c(0.5)) +
-  scale_fill_manual(values = c(colm, cols)) +
-  #geom_point(size=0.5, alpha=0.3) +
+  scale_fill_manual(values = colem) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   labs(y="weighted UniFrac distance", x="", fill='Type of sample')
-
+ggsave('out/ethanol_resistantVSmicrobiota/weighted_boxplot.png', dpi=600)
 # Unweighted UniFrac
 unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   rownames_to_column('Group') %>%
@@ -616,17 +588,18 @@ unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   left_join(metadata  %>% select(Group, person, date, biota), by='Group') %>%
   # Filter so that I have only inter-person comparisons!
   mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
-         which_biota= ifelse(biota.x == 'microbiota' & biota.y == 'microbiota', 'Microbiota',
-                             ifelse(biota.x == 'sporobiota' & biota.y == 'sporobiota', 'Sporobiota', 'Both'))) %>%
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
   filter(which_biota != 'Both')
 
 unifracU_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   geom_boxplot() +
   #geom_violin(draw_quantiles = c(0.5)) +
-  scale_fill_manual(values = c(colm, cols)) +
+  scale_fill_manual(values = colem) +
   #geom_point(size=0.5, alpha=0.3) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   labs(y="unweighted UniFrac distance", x="", fill='Type of sample')
+ggsave('out/ethanol_resistantVSmicrobiota/unweighted_boxplot.png', dpi=600)
 
 ####
 # Persistence of OTUs 
