@@ -12,6 +12,7 @@ library(lubridate)
 library(ape)
 library(ggrepel)
 library(ggpubr)
+# library(phyloseq) which we will need further down in the code. 
 
 set.seed(96)
 theme_set(theme_bw())
@@ -151,195 +152,127 @@ unnest(core_otus, name) %>%
   labs( x = '', y= 'Number of unique OTUs', fill = 'Class')
 ggsave('out/ethanol_resistantVSmicrobiota/core_taxonomy.png', dpi = 600)   
     
-# 
- 
- ##
+
+##
 # Alpha diversity 
+##
+
 # Calculated with relative abundances! 
-## 
 richnessEM = estimateR(otutabEM) # observed richness and Chao1
 evennessEM = diversity(otutabEM)/log(specnumber(otutabEM)) # evenness index
 shannonEM = diversity(otutabEM, index = 'shannon')
 PD = picante::pd(seqtab, tree, include.root = FALSE)
 
-# otutabSM1 = otutabSM %>% rownames_to_column('Group') %>%
-#   filter(substr(Group, 1, 1) == 'S') %>%
-#   column_to_rownames('Group')
-# richnessS = estimateR(otutabSM1)
-# evennessS = diversity(otutabSM1)/log(specnumber(otutabSM1)) # evenness index
-# shannonS = diversity(otutabSM1, index = 'shannon')
-# 
-# alphaS =  as_tibble(as.list(evennessS)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = 1:113) %>%
-#   left_join(t(richnessS) %>% as.data.frame() %>% rownames_to_column('Group'), by='Group') %>%
-#   left_join(as_tibble(as.list(shannonS)) %>% pivot_longer(names_to = 'Group', values_to = 'shannon', cols = 1:113)) %>%
-#   left_join(metadata, by='Group') %>%
-#   mutate(person2 = person, 
-#          PD = 0, 
-#          SR=0)
-
 # Join all calculations and metadata
-alpha_meta = as_tibble(as.list(evennessEM)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = 1:229) %>%
+alpha_meta = as_tibble(as.list(evennessEM)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = starts_with(c('M', 'S'))) %>%
   left_join(t(richnessEM) %>% as.data.frame() %>% rownames_to_column('Group'), by='Group') %>%
-  left_join(as_tibble(as.list(shannonEM)) %>% pivot_longer(names_to = 'Group', values_to = 'shannon', cols = 1:229)) %>%
+  left_join(as_tibble(as.list(shannonEM)) %>% pivot_longer(names_to = 'Group', values_to = 'shannon', cols = starts_with(c('M', 'S')))) %>%
   left_join(PD %>% rownames_to_column('Group'), by = 'Group') %>%
   left_join(metadata, by='Group') %>%
-  mutate(person2 = person, 
-         Group = sub('^S', 'E', Group)) %>%
-  rbind(alphaS) %>%
-  mutate(fraction = ifelse(substr(Group, 1, 1) == 'M', 'microbiota', 
-                           ifelse(substr(Group, 1, 1) == 'S', 'sporobiota', 'EtOH_fraction'))) %>%
-  select(-biota)
+  mutate(person2 = person,
+         biota = ifelse(biota == 'Microbiota', 'Microbiota', 'Ethanol_resistant_fraction'))
 
 # Evenness of samples through time 
 ggplot(alpha_meta, aes(x=day, y=evenness)) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'microbiota'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Microbiota'), 
             aes(group=person2), color= colm, linewidth=0.5, alpha=0.5) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'sporobiota'), 
-            aes(group=person2), color= cols, linewidth=0.5, alpha=0.5) + 
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Ethanol_resistant_fraction'), 
             aes(group=person2), color= cole, linewidth=0.5, alpha=0.5)+
-  geom_line(data=alpha_meta %>% filter(fraction == 'microbiota'),
+  geom_line(data=alpha_meta %>% filter(biota == 'Microbiota'),
             aes(color=person), color= colm, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'sporobiota'),
-            aes(color=person), color=cols, linewidth=1.2) +
-    geom_line(data=alpha_meta %>% filter(fraction == 'EtOH_fraction'), 
+    geom_line(data=alpha_meta %>% filter(biota == 'Ethanol_resistant_fraction'), 
               color=cole, linewidth=1.2) +
   facet_wrap(~person, scales = 'free') +
-  labs(x='Day', y= 'Evenness', color = 'Fraction') +
-  ylim(0,1)
+  labs(x='Day', y= 'Evenness', color = 'Fraction')
+ggsave('out/ethanol_resistantVSmicrobiota/evenness_time.png', dpi=600)
 
 # Evenness correlation 
-evennessEM = alpha_meta %>% select(original_sample, fraction, evenness, person) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'evenness') %>%
-  ggplot(aes(x=microbiota, y=EtOH_fraction)) +
+evennessEM = alpha_meta %>% select(original_sample, biota, evenness, person) %>%
+  pivot_wider(names_from = 'biota', values_from = 'evenness') %>%
+  ggplot(aes(x = Microbiota, y= Ethanol_resistant_fraction)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
-
-evennessSM = alpha_meta %>% select(original_sample, fraction, evenness, person) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'evenness') %>%
-  ggplot(aes(x=microbiota, y=sporobiota)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
+ggsave('out/ethanol_resistantVSmicrobiota/evenness_corr.png', dpi=600)
 
 # Eveeness between fractions 
-alpha_meta %>% ggplot(aes(x=fraction, y=evenness, fill = fraction)) +
+alpha_meta %>% ggplot(aes(x=biota, y=evenness, fill = biota)) +
   geom_boxplot() +
-  geom_point() +
   scale_fill_manual(values = colesm) +
   labs(x='', y='Evenness', fill='Fraction') +
   theme(axis.text.x = element_blank())
+ggsave('out/ethanol_resistantVSmicrobiota/evenness_boxplot.png', dpi=600)
 
+##
 # Observed richness of samples through time 
 ggplot(alpha_meta, aes(x=day, y=S.obs)) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'microbiota'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Microbiota'), 
             aes(group=person2), color= colm, linewidth=0.5, alpha=0.5) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'sporobiota'), 
-            aes(group=person2), color= cols, linewidth=0.5, alpha=0.5) + 
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Ethanol_resistant_fraction'), 
             aes(group=person2), color= cole, linewidth=0.5, alpha=0.5)+
-  geom_line(data=alpha_meta %>% filter(fraction == 'microbiota'),
+  geom_line(data=alpha_meta %>% filter(biota == 'Microbiota'),
             aes(color=person), color= colm, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'sporobiota'),
-            aes(color=person), color=cols, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% filter(biota == 'Ethanol_resistant_fraction'), 
             color=cole, linewidth=1.2) +
   facet_wrap(~person, scales = 'free') +
-  labs(x='Day', y= 'log10(Chao1)') +
-  scale_y_log10()
+  labs(x='Day', y= 'Observed number of OTUs')
+ggsave('out/ethanol_resistantVSmicrobiota/oberseved_time.png', dpi=600)
 
 # Observed richness correlation 
-observedEM = alpha_meta %>% select(original_sample, fraction, S.obs, person) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'S.obs') %>%
-  ggplot(aes(x=microbiota, y=EtOH_fraction)) +
+alpha_meta %>% select(original_sample, biota, S.obs, person) %>%
+  pivot_wider(names_from = 'biota', values_from = 'S.obs') %>%
+  ggplot(aes(x=Microbiota, y=Ethanol_resistant_fraction)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
-
-alpha_meta %>% select(original_sample, fraction, S.obs, person) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'S.obs') %>%
-  ggplot(aes(x=microbiota, y=sporobiota, color = person)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
+ggsave('out/ethanol_resistantVSmicrobiota/observed_corr.png', dpi=600)
 
 
 # Chao1 of samples through time 
 ggplot(alpha_meta, aes(x=day, y=S.chao1)) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'microbiota'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Microbiota'), 
             aes(group=person2), color= colm, linewidth=0.5, alpha=0.5) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'sporobiota'), 
-            aes(group=person2), color= cols, linewidth=0.5, alpha=0.5) + 
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Ethanol_resistant_fraction'), 
             aes(group=person2), color= cole, linewidth=0.5, alpha=0.5)+
-  geom_line(data=alpha_meta %>% filter(fraction == 'microbiota'),
+  geom_line(data=alpha_meta %>% filter(biota == 'Microbiota'),
             aes(color=person), color= colm, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'sporobiota'),
-            aes(color=person), color=cols, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% filter(biota == 'Ethanol_resistant_fraction'), 
             color=cole, linewidth=1.2) +
   facet_wrap(~person, scales = 'free') +
-  labs(x='Day', y= 'log10(Chao1)') +
-  scale_y_log10()
+  labs(x='Day', y= 'Chao1') 
+ggsave('out/ethanol_resistantVSmicrobiota/chao1_time.png', dpi=600)
 
 # Chao1 correlation 
-chaoEM = alpha_meta %>% select(original_sample, fraction, S.chao1) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'S.chao1') %>%
-  ggplot(aes(x=microbiota, y=EtOH_fraction)) +
+alpha_meta %>% select(original_sample, biota, S.chao1) %>%
+  pivot_wider(names_from = 'biota', values_from = 'S.chao1') %>%
+  ggplot(aes(x=Microbiota, y=Ethanol_resistant_fraction)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
-
-alpha_meta %>% select(original_sample, fraction, S.chao1) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'S.chao1') %>%
-  ggplot(aes(x=microbiota, y=sporobiota)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
+ggsave('out/ethanol_resistantVSmicrobiota/chao1_corr.png', dpi=600)
 
 # Shannon of samples through time 
 ggplot(alpha_meta, aes(x=day, y=shannon)) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'microbiota'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Microbiota'), 
             aes(group=person2), color= colm, linewidth=0.5, alpha=0.5) +
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'sporobiota'), 
-            aes(group=person2), color= cols, linewidth=0.5, alpha=0.5) + 
-  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Ethanol_resistant_fraction'), 
             aes(group=person2), color= cole, linewidth=0.5, alpha=0.5)+
-  geom_line(data=alpha_meta %>% filter(fraction == 'microbiota'),
+  geom_line(data=alpha_meta %>% filter(biota == 'Microbiota'),
             aes(color=person), color= colm, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'sporobiota'),
-            aes(color=person), color=cols, linewidth=1.2) +
-  geom_line(data=alpha_meta %>% filter(fraction == 'EtOH_fraction'), 
+  geom_line(data=alpha_meta %>% filter(biota == 'Ethanol_resistant_fraction'), 
             color=cole, linewidth=1.2) +
   facet_wrap(~person, scales = 'free') +
-  labs(x='Day', y= 'log10(Chao1)')
+  labs(x='Day', y= 'Shannon')
+ggsave('out/ethanol_resistantVSmicrobiota/shannon_time.png', dpi=600)
 
 # Shannon correlation 
-shannonEM = alpha_meta %>% select(original_sample, fraction, shannon) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'shannon') 
-
-shanonEM_plot = shannonEM %>% ggplot(aes(x=microbiota, y=EtOH_fraction)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) 
-
-shannon_wilcox = wilcox.test(shannonEM$microbiota, shannonEM$EtOH_fraction)
-
-
-alpha_meta %>% select(original_sample, fraction, shannon) %>%
-  pivot_wider(names_from = 'fraction', values_from = 'shannon') %>%
-  ggplot(aes(x=microbiota, y=sporobiota)) +
+alpha_meta %>% select(original_sample, biota, shannon) %>%
+  pivot_wider(names_from = 'biota', values_from = 'shannon') %>%
+  ggplot(aes(x=Microbiota, y=Ethanol_resistant_fraction)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   ggpubr::stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")))
-
-ggarrange(evennessEM + ggtitle('Evenness'), 
-          obersevedEM + ggtitle('Observed number of OTUs'), 
-          chaoEM + ggtitle('Chao1'), 
-          shanonEM + ggtitle('Shannon'))
-ggsave('plots/alpha_EM.png', dpi=600)
-
+ggsave('out/ethanol_resistantVSmicrobiota/shannon_corr.png')
 
 ##
 # Beta diversity 
@@ -349,71 +282,64 @@ ggsave('plots/alpha_EM.png', dpi=600)
 # Beta divrsity measures have to be calculated for each fraction seperatly! 
 otutabM = otutabEM[grep('^M', rownames(otutabEM), value = TRUE), ]
 otutabE = otutabEM[grep('^S', rownames(otutabEM), value = TRUE), ]
-otutabE = as.data.frame(otutabE) %>% rownames_to_column('Group') %>% mutate(Group = sub('^S', 'E', Group)) %>% column_to_rownames('Group') %>% as.matrix()
-otutabS = otutabSM[grep('^S', rownames(otutabSM), value = TRUE), ]
 
 distM_bray = vegdist(otutabM, method = 'bray')
 distE_bray = vegdist(otutabE, method = 'bray')
-distS_bray = vegdist(otutabS, method = 'bray')
 
 dist_bray = as.matrix(distM_bray) %>% 
   as_tibble(rownames= 'Group') %>%
   pivot_longer(-Group) %>%
-  rbind(as.matrix(distS_bray) %>% 
-          as_tibble(rownames= 'Group') %>%
-          pivot_longer(-Group)) %>%
   rbind(as.matrix(distE_bray) %>% 
           as_tibble(rownames= 'Group') %>%
           pivot_longer(-Group)) %>%
   # Remove the distances of the same sample 
   filter(Group != name) %>%
-  left_join(metadata %>% select(Group, person, date), by='Group') %>%
-  left_join(metadata %>% select(Group, person, date), by=join_by('name' == 'Group')) %>%
-  mutate(fraction = ifelse(substr(Group, 1, 1) == 'M', 'microbiota', 
-                           ifelse(substr(Group, 1, 1) == 'S', 'sporobiota', 'EtOH_fraction')), 
+  left_join(metadata %>% select(Group, person, day), by='Group') %>%
+  left_join(metadata %>% select(Group, person, day), by=join_by('name' == 'Group')) %>%
+  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol_resistant_fraction'), 
          same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual') )
 
-ggplot(dist_bray, aes(x=fraction, y=value, fill=same_person)) +
+ggplot(dist_bray, aes(x=biota, y=value, fill=same_person)) +
   geom_boxplot() +
-  stat_compare_means(aes(group=paste0(same_person, fraction)), 
-                     method = 'anova', ref.group = '.all.') +
-  labs(y="Bray-Curtis distance", x="", fill='Intra/Inter individual?')
+  scale_fill_manual(values = colem) +
+  stat_compare_means(aes(group=paste0(biota, same_person)), 
+                     method = 'anova') +
+  labs(y='Bray-Curtis distance', x='', fill='Intra/Inter individual?')
+ggsave('out/ethanol_resistantVSmicrobiota/braycurtis_boxplot.png', dpi=600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
 # Normalized distances of each individual 
 dist_bray_norm = dist_bray %>%
   filter(same_person == 'Same individual') %>%
-  group_by(person.x, fraction) %>%
+  group_by(person.x, biota) %>%
   # z-score normalization 
   mutate(z_norm_value = ((value-mean(value)/sd(value))), 
          # max-min normalization
          min_max_norm = (value - min(value))/(max(value) - min(value))) 
 
 z_score_plot = dist_bray_norm %>%
-  ggplot(aes(x=fraction, y=z_norm_value, fill=fraction)) +
+  ggplot(aes(x=biota, y=z_norm_value, fill=biota)) +
   geom_boxplot() +
-  scale_fill_manual(values = colesm) +
-  stat_compare_means(method = 'anova', ref.group = '.all.') +
+  scale_fill_manual(values = colem) +
+  stat_compare_means(method = 'anova') +
   labs(x='', y='Bray-Curtis distances (Z-score normalized)', fill='Fraction') +
-  theme(axis.text.x = element_blank()) +
-  theme_bw()
+  theme(axis.text.x = element_blank()) 
 
 minmax_plot = dist_bray_norm %>%
-  ggplot(aes(x=fraction, y=min_max_norm, fill=fraction)) +
+  ggplot(aes(x=biota, y=min_max_norm, fill=biota)) +
   geom_boxplot() +
-  scale_fill_manual(values = colesm) +
-  stat_compare_means(method = 'anova', ref.group = '.all.') +
+  scale_fill_manual(values = colem) +
+  stat_compare_means(method = 'anova') +
   labs(x='', y='Bray-Curtis distances (min-max normalized)', fill='Fraction') +
-  theme(axis.text.x = element_blank()) +
-  theme_bw()
+  theme(axis.text.x = element_blank()) 
 
 ggarrange(z_score_plot, minmax_plot, 
-          common.legend = TRUE)
+          common.legend = TRUE, 
+          legend = 'right')
+ggsave('out/ethanol_resistantVSmicrobiota/braycurtis_boxplot_normalized.png', dpi=600)
 
-ggsave('sporobiotaVSmicrobiota/plots/SvM_bray_boxplot_normalized.png', dpi=600)
-
-# Simple NMDS plot! 
+# NMDS plot
 nmds_bcM = metaMDS(distM_bray)
 nmds_positionsM = as.data.frame(scores(nmds_bcM, display='sites')) %>%
   rownames_to_column('Group') %>%
@@ -421,27 +347,36 @@ nmds_positionsM = as.data.frame(scores(nmds_bcM, display='sites')) %>%
   left_join(metadata, by= 'Group')
 # Ordination plot wih person/biota 
 nmds_positionsM %>%
-  ggplot(aes(x=NMDS1, y=NMDS2, color=person, shape=extreme_event14)) +
+  ggplot(aes(x=NMDS1, y=NMDS2, color=person)) +
   geom_point(size=3) +
   #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
   scale_size_continuous(range = c(3,6)) +
-  labs(x='', y='', shape='Type of biota', color='Individual') +
-  theme_bw()
-ggsave('sporobiotaVSmicrobiota/plots/SvM_nmds.png', dpi=600)
+  labs(x='', y='', color='Individual')
+ggsave('out/ethanol_resistantVSmicrobiota/bracurtis_microbiota_nmds.png', dpi=600)
 
+# Ethanol resistant fraction 
+nmds_bcE = metaMDS(distE_bray)
+nmds_positionsE = as.data.frame(scores(nmds_bcE, display='sites')) %>%
+  rownames_to_column('Group') %>%
+  # Join with metadata
+  left_join(metadata, by= 'Group')
+# Ordination plot wih person/biota 
+nmds_positionsE %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=person)) +
+  geom_point(size=3) +
+  #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
+  scale_size_continuous(range = c(3,6)) +
+  labs(x='', y='', color='Individual') 
+ggsave('out/ethanol_resistantVSmicrobiota/bracurtis_ethanol_resistant_nmds.png', dpi=600)
 
 # Jaccard
 # Beta divrsity measures have to be calculated for each fraction seperatly! 
 distM_jaccard = vegdist(otutabM, method = 'jaccard')
 distE_jaccard = vegdist(otutabE, method = 'jaccard')
-distS_jaccard = vegdist(otutabS, method = 'jaccard')
 
 dist_jaccard = as.matrix(distM_jaccard) %>% 
   as_tibble(rownames= 'Group') %>%
   pivot_longer(-Group) %>%
-  rbind(as.matrix(distS_jaccard) %>% 
-          as_tibble(rownames= 'Group') %>%
-          pivot_longer(-Group)) %>%
   rbind(as.matrix(distE_jaccard) %>% 
           as_tibble(rownames= 'Group') %>%
           pivot_longer(-Group)) %>%
@@ -449,49 +384,50 @@ dist_jaccard = as.matrix(distM_jaccard) %>%
   filter(Group != name) %>%
   left_join(metadata %>% select(Group, person, date), by='Group') %>%
   left_join(metadata %>% select(Group, person, date), by=join_by('name' == 'Group')) %>%
-  mutate(fraction = ifelse(substr(Group, 1, 1) == 'M', 'microbiota', 
-                           ifelse(substr(Group, 1, 1) == 'S', 'sporobiota', 'EtOH_fraction')), 
+  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol_resistant_fraction'), 
          same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual') )
 
-ggplot(dist_jaccard, aes(x=fraction, y=value, fill=same_person)) +
+ggplot(dist_jaccard, aes(x=biota, y=value, fill=same_person)) +
   geom_boxplot() +
-  stat_compare_means(aes(group=paste0(same_person, fraction)), 
-                     method = 'anova', ref.group = '.all.') +
+  scale_fill_manual(values = colem) +
+  stat_compare_means(aes(group=paste0(same_person, biota)), 
+                     method = 'anova') +
   labs(y="Jaccard distance", x="", fill='Intra/Inter individual?')
+ggsave('out/ethanol_resistantVSmicrobiota/jaccard_boxplot.png', dpi = 600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
 # Normalized distances of each individual 
 dist_jaccard_norm = dist_jaccard %>%
   filter(same_person == 'Same individual') %>%
-  group_by(person.x, fraction) %>%
+  group_by(person.x, biota) %>%
   # z-score normalization 
   mutate(z_norm_value = ((value-mean(value)/sd(value))), 
          # max-min normalization
          min_max_norm = (value - min(value))/(max(value) - min(value))) 
 
 z_score_plot = dist_jaccard_norm %>%
-  ggplot(aes(x=fraction, y=z_norm_value, fill=fraction)) +
+  ggplot(aes(x=biota, y=z_norm_value, fill=biota)) +
   geom_boxplot() +
-  scale_fill_manual(values = colesm) +
-  stat_compare_means(method = 'anova', ref.group = '.all.') +
+  scale_fill_manual(values = colem) +
+  stat_compare_means(method = 'anova') +
   labs(x='', y='Jaccard distances (Z-score normalized)', fill='Fraction') +
-  theme(axis.text.x = element_blank()) +
-  theme_bw()
+  theme(axis.text.x = element_blank()) 
 
 minmax_plot = dist_jaccard_norm %>%
-  ggplot(aes(x=fraction, y=min_max_norm, fill=fraction)) +
+  ggplot(aes(x=biota, y=min_max_norm, fill=biota)) +
   geom_boxplot() +
-  scale_fill_manual(values = colesm) +
-  stat_compare_means(method = 'anova', ref.group = '.all.') +
+  scale_fill_manual(values = colem) +
+  stat_compare_means(method = 'anova') +
   labs(x='', y='Jaccard distances (min-max normalized)', fill='Fraction') +
-  theme(axis.text.x = element_blank()) +
-  theme_bw()
+  theme(axis.text.x = element_blank())
 
 ggarrange(z_score_plot, minmax_plot, 
-          common.legend = TRUE)
+          common.legend = TRUE, 
+          legend = 'right')
+ggsave('out/ethanol_resistantVSmicrobiota/jaccard_boxplot_normalized.png', dpi=600)
 
-# Simple NMDS plot! 
+# NMDS
 nmds_jaccardM = metaMDS(distM_jaccard)
 nmds_positionsM = as.data.frame(scores(nmds_jaccardM, display='sites')) %>%
   rownames_to_column('Group') %>%
@@ -501,89 +437,73 @@ nmds_positionsM = as.data.frame(scores(nmds_jaccardM, display='sites')) %>%
 nmds_positionsM %>%
   ggplot(aes(x=NMDS1, y=NMDS2, color=person)) +
   geom_point(size=3) +
-  labs(x='', y='', shape='Type of biota', color='Individual') +
-  ggtitle('Jaccard NMDS')
+  labs(x='', y='', color='Individual') 
+ggsave('out/ethanol_resistantVSmicrobiota/jaccard_microbiota_nmds.png', dpi=600)
 
 # Distance to centroid for each individual and both their samples of microbiota and sporobita; is there a greater distance to centroid for samples of extreme events?
 levels <- c("A", "B", "C", "D", "E", "F", "G", "H", "I")
 
 unique(dist_jaccard$name)
-repetitionsM <- c(13, 12, 13, 14, 14, 12, 13, 13, 12)
-repetitionsS <- c(13, 12, 12, 14, 13, 12, 12, 13, 12)
+repetitionsM <- dist_jaccard %>% filter(biota == 'Microbiota') %>% group_by(person.x) %>% summarise(n = n_distinct(Group)) %>% pull(n)
+repetitionsE <- dist_jaccard %>% filter(biota == 'Ethanol_resistant_fraction') %>% group_by(person.x) %>% summarise(n = n_distinct(Group)) %>% pull(n)
 groupsM = factor(rep(levels, times = repetitionsM), levels = levels)
-groupsS = factor(rep(levels, times = repetitionsS), levels = levels)
+groupsE = factor(rep(levels, times = repetitionsE), levels = levels)
 
 mod = betadisper(distM_jaccard, group = groupsM, type = 'centroid')
 anova(mod)
 plot(mod)
 boxplot(mod)
 
-modS =betadisper(distS_jaccard, group = groupsS, type = 'centroid')
-anova(modS)
-plot(modS)
-boxplot(modS)
+modE =betadisper(distE_jaccard, group = groupsE, type = 'centroid')
+anova(modE)
+plot(modE)
+boxplot(modE)
 
 dist_centorid = tibble(Group = names(mod$distances), dist2centorid = as.numeric(mod$distances)) %>%
-  rbind(tibble(Group = names(modS$distances), dist2centorid = as.numeric(modS$distances))) %>%
+  rbind(tibble(Group = names(modE$distances), dist2centorid = as.numeric(modE$distances))) %>%
   left_join(metadata, by= 'Group')
 
 dist_centorid %>% 
   ggplot(aes(x=person, y=dist2centorid)) +
   geom_boxplot(mapping = aes(color = biota), outlier.shape = 8, linewidth = 1) +
-  scale_color_manual(values = colsm) +
+  scale_color_manual(values = colem) +
   stat_compare_means() +
-  labs(x='', y = 'Jaccard distances to centroid') +
-  theme_bw(base_size = 13) 
-
-dist_centroid2 = tibble(Group = names(mod$distances), dist2centorid = as.numeric(mod$distances)) %>%
-  left_join(metadata, by= 'Group') %>%
-  left_join(tibble(Group = names(modS$distances), dist2centorid = as.numeric(modS$distances))%>% left_join(metadata, by= 'Group'), by='original_sample')
-
-ggplot(dist_centroid2, aes(x=dist2centorid.x, y=dist2centorid.y)) +
-  geom_point(size=3) +
-  geom_smooth(method = 'lm') +
-  labs(x = 'Distance to centroid for microbiota', y = 'Distance to centroid for sporobiota samples') +
-  theme_bw(base_size = 13)
-
-# By individual 
-ggplot(dist_centroid2, aes(x=dist2centorid.x, y=dist2centorid.y)) +
-  geom_point(size=3) +
-  geom_smooth(method = 'lm') +
-  facet_grid(~ person.x) +
-  labs(x = 'Distance to centroid for microbiota', y = 'Distance to centroid for sporobiota samples') +
-  theme_bw(base_size = 13)
+  labs(x='', y = 'Jaccard distances to centroid')
+ggsave('out/ethanol_resistantVSmicrobiota/jaccard_individual_dist2centroid.png', dpi=600)
 
 # Distances between samples x days appart 
 # Calculate if there is a difference in the distance between samples of individuals if they were sampled, 
 # closer together and more appart between microbiota and EtOH fraction 
-
 dist_time = dist_jaccard %>%
   # Filter different individuals 
   filter(same_person == 'Same individual') %>%
   # Calculate the difference between sampling times
   mutate(diff=abs(date.x-date.y)) %>%
   # group by difference between days and person
-  group_by(fraction, person.x, diff) %>%
+  group_by(biota, person.x, diff) %>%
   summarise(median=median(value), sd= sd(value)) %>%
   ungroup() 
 
 dist_time %>%
-  ggplot(aes(x=diff, y=median, color=person.x)) +
+  ggplot(aes(x=diff, y=median, color=biota)) +
   geom_point() +
-  #scale_color_manual(values=colesm) +
-  geom_smooth(aes(group=person.x), method = 'lm') +
+  scale_color_manual(values=colem) +
+  geom_smooth(#aes(group=person.x), 
+              method = 'lm') +
   stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
-  facet_grid(~fraction) +
+  #facet_grid(~biota) +
   labs(x='Days between sampling points', y='Median Jaccard distance', color='Fraction')
+ggsave('out/ethanol_resistantVSmicrobiota/jaccard_time.png', dpi=600)
 
 # Pearsons correlation between median of distance between samples and time 
-dist_timeM = filter(dist_time, fraction == 'microbiota')
+dist_timeM = filter(dist_time, biota == 'Microbiota')
 cor.test(as.numeric(dist_timeM$diff), dist_timeM$median, method='pearson') 
 # Negative correlation -0.03, not significant 
-dist_timeE = filter(dist_time, fraction == 'EtOH_fraction')
+dist_timeE = filter(dist_time, biota == 'Ethanol_resistant_fraction')
 cor.test(as.numeric(dist_timeE$diff), dist_timeE$median, method='pearson') 
 # Negative correlation -0.03, not significant! 
 
+##
 # UniFrac 
 library(phyloseq)
 ps = phyloseq(otu_table(as.matrix(seqtab), taxa_are_rows = FALSE), 
@@ -599,9 +519,18 @@ colnames(positions) <- c('pcoa1', 'pcoa2', 'pcoa3', 'pcoa4', 'pcoa5', 'pcoa6', '
 
 percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
 pretty_pe = format(round(percent_explained[1:2], digits = 1), nsmall = 1, trim=TRUE)
-library(glue)
-labs = c(glue('PCo 1 ({pretty_pe[1]}%)'), 
-         glue('PCo 1 ({pretty_pe[2]}%)'))
+# library(glue)
+# labs = c(glue('PCo 1 ({pretty_pe[1]}%)'), 
+#          glue('PCo 1 ({pretty_pe[2]}%)'))
+
+# Aggregate to find the number of distinct groups
+result <- aggregate(Group ~ person.x, data = dist_jaccard, FUN = function(x) length(unique(x)))
+
+# Rename the columns for clarity
+colnames(result) <- c("person.x", "n_distinct_groups")
+
+print(result)
+
 
 positions %>%
   as_tibble(rownames = 'Group') %>%
@@ -835,6 +764,7 @@ core_percent = fin_tax %>% filter(prevalence == c(11, 12) & count > 0) %>%
 
 core_percent %>% ggplot(aes(x = biota, y=percentage_core)) +
   geom_boxplot()
+
 
 # CORE SPOROBIOTA and MICROBIOTA on the level of Firmicutes! 
 # Taxonomy of just core and relabund of just core 
