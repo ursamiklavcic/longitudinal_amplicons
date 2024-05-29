@@ -28,7 +28,24 @@ individuals = c('#e02416','#f2990a', '#127a10', '#1e9c99',
                 '#5f71e8', '#a34ce6', '#d609b1', '#e4e805', '#eb0e6a')
 
 ## Compositon 
-# Difference between compositions of microbiota and EtOH samples 
+# How to best show differences between absolute and relative abundances?
+# Which classes of Bacteria do I want to show? 
+# Actinobacteria, Alphaproteobacteria, Bacilli, Betaproteobacteria, Bacteroidia, Clostridia, Erysipelotrichia, Ngativicutes, Verrucomicrobiae, Other
+classes = c('Actinobacteria', 'Alphaproteobacteria', 'Betaproteobacteria', 'Bacilli', 'Bacteroidia', 
+            'Clostridia', 'Erysipelotrichia', 'Negativicutes', 'Verrucomicrobiae')
+
+class_colors = c("#018370",
+                 "#ff419b",
+                 "#7ee100",
+                 "#01429e",
+                 "#e5bd00",
+                 "#550008",
+                 "#c5fff3",
+                 "#c83c00",
+                 "#ffb4c5",
+                 "#655100")
+
+# Relative abundance
 otutabEM_long = otutabEM %>% as.data.frame() %>%
   rownames_to_column('Group') %>%
   pivot_longer(-Group) %>%
@@ -36,18 +53,17 @@ otutabEM_long = otutabEM %>% as.data.frame() %>%
   pivot_longer(values_to = 'taxon', names_to = 'level', cols=4:9) %>%
   left_join(metadata, by = 'Group')
 
-otutabEM_long %>%
+rel_plot = otutabEM_long %>%
   filter(level=='Class') %>%
-  group_by(biota, person, taxon) %>%
-  summarize(relsum = sum(value)) %>%
-  mutate(percentage = (relsum/sum(relsum))*100) %>% 
-  mutate(taxon_fin = ifelse(percentage < 0.1, 'Other (less than 0.1%)', taxon)) %>%
-  ggplot(aes(x=person, y=percentage, fill=taxon_fin)) +
+  mutate(taxon_fin = ifelse(taxon %in% classes, taxon, 'Other')) %>%
+  group_by(biota, person, taxon_fin) %>%
+  summarize(relsum = sum(value), .groups = 'drop') %>%
+  group_by(biota, person) %>%
+  mutate(percent = (relsum/sum(relsum))*100) %>% 
+  ggplot(aes(x=person, y=percent, fill=taxon_fin)) +
   geom_bar(stat = 'identity') +
   facet_wrap(vars(biota)) +
-  labs(x ='', y='Relative abundance', fill = 'Class') +
-  theme(axis.text.x = element_text(angle=45, hjust=1))
-ggsave('out/ethanol_resistantVSmicrobiota/relabund_barplot.png', dpi=600)
+  labs(x ='', y='Relative abundance', fill = 'Class')
 
 ## Absolute composition
 otutab_absrel_long = otutab_absrel %>%
@@ -55,27 +71,21 @@ otutab_absrel_long = otutab_absrel %>%
   pivot_longer(names_to = 'level', values_to = 'taxon', cols=6:11) %>%
   left_join(metadata, by = 'Group')
 
-p1 = otutab_absrel_long %>%
-  filter(level == 'Class' & biota == 'Microbiota') %>%
-  group_by(biota, person, taxon) %>%
+abs_plot = otutab_absrel_long %>%
+  filter(level == 'Class') %>%
+  mutate(taxon_fin = ifelse(taxon %in% classes, taxon, 'Other')) %>%
+  group_by(biota, person, taxon_fin) %>%
   summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
-  mutate(taxon_fin = ifelse(abssum < 1E+10, 'Other (less 1E+10)', taxon)) %>%
-  ggplot(aes(x = person, y = abssum, fill = taxon_fin)) +
-  geom_bar(stat = 'identity', position = 'fill') +
-  labs(x ='', y='Sum absolute abundance', fill = 'Class', title = 'Microbiota') 
+  mutate(percent = (abssum/sum(abssum))*100) %>%
+  ggplot(aes(x = person, y = percent, fill = taxon_fin)) +
+  geom_bar(stat = 'identity') +
+  labs(x ='', y='Absolute abundance', fill = 'Class') +
+  facet_wrap(vars(biota), scales = 'free_y')
 
-p2 = otutab_absrel_long %>%
-  filter(level == 'Class' & biota == 'Ethanol resistant fraction') %>%
-  group_by(biota, person, taxon) %>%
-  summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
-  mutate(taxon_fin = ifelse(abssum < 1E+5, 'Other (less 1E+5)', taxon)) %>%
-  ggplot(aes(x = person, y = abssum, fill = taxon_fin)) +
-  geom_bar(stat = 'identity', position = 'fill') +
-  labs(x ='', y='Sum absolute abundance', fill = 'Class', title = 'Ethanol resistant fraction') 
-
-ggarrange(p1, p2)
-ggsave('out/ethanol_resistantVSmicrobiota/absabund_barplot.png', dpi=600)
-
+ggarrange(rel_plot, abs_plot, 
+          common.legend = TRUE, 
+          legend = 'right')
+ggsave('out/ethanol_resistantVSmicrobiota/rel_abs_barplot.png', dpi=600)
 
 ##
 # Alpha diversity 
