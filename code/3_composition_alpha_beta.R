@@ -87,28 +87,95 @@ ggarrange(rel_plot, abs_plot,
           legend = 'right')
 ggsave('out/ethanol_resistantVSmicrobiota/rel_abs_barplot.png', dpi=600)
 
-##
+# Relative and absolute abundance of mian Genera in Firmicutes in microbiota and EtOH resistant fraction
+rel_fimicutes = otutabEM %>% as.data.frame() %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(Phylum == 'Firmicutes') %>%
+  left_join(metadata, by = 'Group') %>%
+  group_by(biota, person, Genus) %>%
+  summarize(relsum = sum(value), .groups = 'drop') %>%
+  group_by(biota, person) %>%
+  mutate(percent = (relsum/sum(relsum))*100, 
+         genus_fin = ifelse(percent > 5, Genus, 'Less than 5%')) %>% 
+  
+  ggplot(aes(x=person, y=percent, fill=genus_fin)) +
+  geom_bar(stat = 'identity') +
+  facet_wrap(vars(biota)) +
+  labs(x ='', y='Relative abundance', fill = 'Genus')
+
+abs_firmicutes = otutab_absrel %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(Phylum == 'Firmicutes') %>%
+  left_join(metadata, by = 'Group') %>%
+  group_by(biota, person, Genus) %>%
+  summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
+  group_by(biota, person) %>%
+  mutate(percent = (abssum/sum(abssum))*100, 
+         genus_fin = ifelse(percent > 5, Genus, 'Less than 5%')) %>%
+  ggplot(aes(x = person, y = abssum, fill = genus_fin)) +
+  geom_bar(stat = 'identity') +
+  labs(x ='', y='Absolute abundance', fill = 'Genus') +
+  facet_wrap(vars(biota), scales = 'free_y')
+
+ggarrange(rel_fimicutes, abs_firmicutes, 
+          common.legend = TRUE, 
+          legend = 'right')
+ggsave('out/ethanol_resistantVSmicrobiota/rel_abs_firmicutes.png', dpi=600)
+
+# Core community analysis 
+# Core OTUs are those present in at least 11 time-points, irregardles of their relative or absolute abundance
+core_otus = as.data.frame(otutabEM) %>% rownames_to_column('Group') %>%
+  left_join(metadata, by = 'Group') %>%
+  select(Group, person, biota, day, starts_with('Otu')) %>%
+  pivot_longer(names_to = 'name', values_to = 'count', cols = starts_with('Otu')) %>%
+  mutate(PA = ifelse(count > 0, 1, 0)) %>%
+  group_by(biota, person, name) %>%
+  arrange(day, .by_group = TRUE) %>%
+  # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
+  mutate(otu_cumsum = cumsum(PA)) %>%
+  ungroup() %>%
+  filter(otu_cumsum %in% c(11, 12)) %>%
+  group_by(biota, person) %>%
+  summarise(name = list(unique(name)))
+
+unnest(core_otus, name) %>%
+  left_join(taxtab, by = 'name') %>%
+  group_by(biota, person, Class) %>%
+  summarise(number = n_distinct(name), .groups = 'drop') %>%
+  mutate(class_fin = ifelse(number > 5, Class, 'Less than 5 OTUs per Class')) %>%
+  ggplot(aes(x = biota, y = number, fill = class_fin)) +
+  geom_bar(stat = 'identity') +
+  facet_wrap(vars(person), scales = 'free_y') +
+  labs( x = '', y= 'Number of unique OTUs', fill = 'Class')
+ggsave('out/ethanol_resistantVSmicrobiota/core_taxonomy.png', dpi = 600)   
+    
+# 
+ 
+ ##
 # Alpha diversity 
+# Calculated with relative abundances! 
 ## 
 richnessEM = estimateR(otutabEM) # observed richness and Chao1
 evennessEM = diversity(otutabEM)/log(specnumber(otutabEM)) # evenness index
 shannonEM = diversity(otutabEM, index = 'shannon')
 PD = picante::pd(seqtab, tree, include.root = FALSE)
 
-otutabSM1 = otutabSM %>% rownames_to_column('Group') %>%
-  filter(substr(Group, 1, 1) == 'S') %>%
-  column_to_rownames('Group')
-richnessS = estimateR(otutabSM1)
-evennessS = diversity(otutabSM1)/log(specnumber(otutabSM1)) # evenness index
-shannonS = diversity(otutabSM1, index = 'shannon')
-
-alphaS =  as_tibble(as.list(evennessS)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = 1:113) %>%
-  left_join(t(richnessS) %>% as.data.frame() %>% rownames_to_column('Group'), by='Group') %>%
-  left_join(as_tibble(as.list(shannonS)) %>% pivot_longer(names_to = 'Group', values_to = 'shannon', cols = 1:113)) %>%
-  left_join(metadata, by='Group') %>%
-  mutate(person2 = person, 
-         PD = 0, 
-         SR=0)
+# otutabSM1 = otutabSM %>% rownames_to_column('Group') %>%
+#   filter(substr(Group, 1, 1) == 'S') %>%
+#   column_to_rownames('Group')
+# richnessS = estimateR(otutabSM1)
+# evennessS = diversity(otutabSM1)/log(specnumber(otutabSM1)) # evenness index
+# shannonS = diversity(otutabSM1, index = 'shannon')
+# 
+# alphaS =  as_tibble(as.list(evennessS)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = 1:113) %>%
+#   left_join(t(richnessS) %>% as.data.frame() %>% rownames_to_column('Group'), by='Group') %>%
+#   left_join(as_tibble(as.list(shannonS)) %>% pivot_longer(names_to = 'Group', values_to = 'shannon', cols = 1:113)) %>%
+#   left_join(metadata, by='Group') %>%
+#   mutate(person2 = person, 
+#          PD = 0, 
+#          SR=0)
 
 # Join all calculations and metadata
 alpha_meta = as_tibble(as.list(evennessEM)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = 1:229) %>%
