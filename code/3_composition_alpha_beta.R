@@ -566,7 +566,7 @@ unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
   pivot_longer(-Group) %>%
   filter(Group != name) %>%
   left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(metadata  %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
   # Filter so that I have only inter-person comparisons!
   mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
          which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
@@ -579,13 +579,14 @@ unifracW_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   labs(y="weighted UniFrac distance", x="", fill='Type of sample')
 ggsave('out/ethanol_resistantVSmicrobiota/weighted_boxplot.png', dpi=600)
+
 # Unweighted UniFrac
 unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   rownames_to_column('Group') %>%
   pivot_longer(-Group) %>%
   filter(Group != name) %>%
   left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(metadata  %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
   # Filter so that I have only inter-person comparisons!
   mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
          which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
@@ -601,19 +602,74 @@ unifracU_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   labs(y="unweighted UniFrac distance", x="", fill='Type of sample')
 ggsave('out/ethanol_resistantVSmicrobiota/unweighted_boxplot.png', dpi=600)
 
+
+# UniFrac through time 
+diff_timeU = unifracU_df %>%
+  # Filter different individuals 
+  filter(same_person == 'Same individual') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=as.integer(abs(date.x-date.y))) %>%
+  # group by difference between days and person
+  group_by(which_biota, person.x, diff) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() 
+
+ggplot(diff_timeU, aes(x=diff, y=median, color=which_biota)) +
+  geom_point() +
+  scale_color_manual(values=colem) +
+  geom_smooth(method = 'lm') +
+  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
+    labs(x='Days between sampling points', y='Median unweighted UniFrac distance', color='Fraction')
+
+ggsave('out/ethanol_resistantVSmicrobiota/unweighted_time.png', dpi=600)
+
+# What if distances were normalized for each individual? 
+dist_unweighted_norm = unifracU_df %>%
+  filter(same_person == 'Same individual') %>%
+  group_by(person.x, which_biota) %>%
+  # z-score normalization 
+  mutate(z_norm_value = ((value-mean(value)/sd(value))), 
+         # max-min normalization
+         min_max_norm = (value - min(value))/(max(value) - min(value)))
+  
+dist_unweighted_norm_time = dist_unweighted_norm %>%
+  mutate(diff=as.integer(abs(date.x-date.y))) %>%
+  group_by(which_biota, person.x, diff) %>%
+  summarise(median=median(min_max_norm), sd= sd(min_max_norm)) %>%
+  ungroup() 
+
+# Pearsons correlation between median of distance between samples and time 
+dist_timeM = filter(dist_unweighted_norm_time, which_biota == 'Microbiota')
+corM = cor.test(as.numeric(dist_timeM$diff), dist_timeM$median, method='pearson') 
+
+dist_timeE = filter(dist_unweighted_norm_time, which_biota == 'Ethanol resistant fraction')
+corE = cor.test(as.numeric(dist_timeE$diff), dist_timeE$median, method='pearson') 
+#
+dist_unweighted_norm_time %>%
+  ggplot(aes(x=diff, y=median, color=which_biota)) +
+  geom_point() +
+  geom_smooth(method = 'lm', se = FALSE) +
+  scale_color_manual(values=colem) +
+  annotate("text", x = Inf, y = Inf, label = paste0("R = ", round(corM$estimate, 2), "  p = ", round(corM$p.value, digits = 6)), 
+           hjust = 1.1, vjust = 2, color = colm) +
+  annotate("text", x = Inf, y = Inf, label = paste0("R = ", round(corE$estimate, 2), "  p = ", round(corE$p.value, digits = 4)),  
+           hjust = 1.1, vjust = 4, color = cole) +
+  #stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
+  labs(x='Days between sampling points', y='Median min-max normalized unweighted UniFrac distance', color='Fraction')
+ggsave('out/ethanol_resistantVSmicrobiota/unweighted_time_minmax_normlaized.png', dpi=600)
+
 ####
 # Persistence of OTUs 
 ####
 # How many OTUs are present in 1, 2, 3, 4 .. 12 samples and are unique? 
-otu_relEM <- decostand(as.data.frame(otutabEM), method="total", MARGIN=1) %>%
+otu_rel = decostand(as.data.frame(otutabEM), method="total", MARGIN=1) %>%
   rownames_to_column('Group') 
+rowSums(select(otu_rel, -Group))
 
-merged = otu_relEM %>%
-  mutate(biota = substr(Group, 1, 1), 
-         person = substr(Group, 2, 2), 
-         time_point = as.numeric(gsub("[^0-9]", "", Group))) %>%
+merged = otu_rel %>%
+  left_join(select(metadata, biota, person, day, Group), by = 'Group') %>%
   column_to_rownames('Group') %>%
-  filter(time_point < 13) %>%
+  #filter(time_point < 13) %>%
   select(person, biota, starts_with('Otu'))
 
 fin = data.frame()
@@ -670,33 +726,24 @@ fin_mean_percent = fin_percent %>%
 ggplot() +
   geom_point(fin_percent, mapping = aes(x = prevalence, y = count, color=biota), size=3) +
   geom_line(fin_mean, mapping=aes(y=mean, x=prevalence, color = biota), linewidth=1.5) +
-  scale_color_manual(values = colsm) +
-  scale_x_continuous(breaks = seq(0,12, by=1)) +
-  labs(x='Occupancy (time-points of individual)', y= 'Number of OTUs present in # time-points') +
-  theme(legend.position = 'none') +
-  theme_bw(base_size = 13)
-
-ggsave('sporobiotaVSmicrobiota//plots/SvM_occupancy_count.png', dpi=600)
+  scale_color_manual(values = colem) +
+  scale_x_continuous(breaks = seq(0,14, by=1)) +
+  labs(x='Occupancy (time-points of individual)', y= 'Number of OTUs present in # time-points', color = 'Fraction')
+ggsave('out/ethanol_resistantVSmicrobiota/occupancy_count.png', dpi=600)
 
 ggplot() +
   geom_point(fin_percent, mapping = aes(x = prevalence, y = percent, color = biota), size=3) +
   geom_line(fin_mean_percent, mapping=aes(y=mean, x=prevalence, color = biota), linewidth=1.5) +
-  scale_color_manual(values = colsm) +
-  scale_x_continuous(breaks = seq(0,12, by=1)) +
+  scale_color_manual(values = colem) +
+  scale_x_continuous(breaks = seq(0,14, by=1)) +
   scale_y_continuous(breaks = seq(0,100, by=20)) +
-  labs(x='Occupancy (time-points of individual)', y= 'Percent of OTUs present in # time-points (%)') +
-  theme(legend.position = 'none') +
-  theme_bw(base_size = 13)
-ggsave('sporobiotaVSmicrobiota//plots/SvM_occupancy_percent.png', dpi=600)
+  labs(x='Occupancy (time-points of individual)', y= 'Percent of OTUs present in # time-points (%)', color = 'Fraction')
+ggsave('out/ethanol_resistantVSmicrobiota/occupancy_percent.png', dpi=600)
 
-write.csv(fin_percent %>% filter(prevalence == 12 | prevalence == 11), 'sporobiotaVSmicrobiota/core.csv' )
-
-# Taxonomy of these OTUs and relabund! 
-otu_rel_long = otu_relEM %>% 
+# Taxonomy of differentialy present OTUs and their relative abundance  
+otu_rel_long = otu_rel %>% 
   pivot_longer(names_to = 'name', values_to = 'rel_abund', cols = starts_with('Otu')) %>%
-  mutate(biota = substr(Group, 1, 1), 
-         person = substr(Group, 2, 2), 
-         time_point = as.numeric(gsub("[^0-9]", "", Group))) %>%
+  left_join(select(metadata, biota, person, day, Group), by = 'Group') %>%
   group_by(biota, person, name) %>%
   summarise(mean_rel_abund = mean(rel_abund))
 
@@ -712,87 +759,57 @@ fin_tax %>%
   summarise(distinct_otus = n_distinct(names)) %>%
   ggplot(aes(x = prevalence, y= distinct_otus, fill = taxon)) +
   geom_bar( stat = 'identity') +
-  scale_x_continuous(breaks = seq(1,12, by=1)) +
+  scale_x_continuous(breaks = seq(1,14, by=1)) +
   facet_grid(~biota) +
-  labs(x = 'Days present in the gut', y= '# of distinct OTUs', fill = 'Phylum') +
-  theme_bw()
+  labs(x = 'Days present in the gut', y= 'Number of distinct OTUs', fill = 'Phylum') 
+ggsave('out/ethanol_resistantVSmicrobiota/occupancy_taxonomy.png', dpi=600)
 
 # Relative abunandces of OTUs with different prevalences 
 fin_tax %>% 
   ggplot(aes(x = as.factor(prevalence), y = mean_rel_abund, fill = biota)) + 
   geom_boxplot() +
   scale_y_log10() +
-  scale_fill_manual(values = colsm) +
-  labs(x = 'Days present in the gut', y= 'log10(mean relative abundance)', fill = 'Biota') +
-  theme_bw()
-
-# CORE of 11 and 12 time-points
-core_percent = fin_tax %>% filter(prevalence == c(11, 12) & count > 0) %>%
-  group_by(biota, person) %>%
-  summarise(core_otus = n_distinct(names)) %>%
-  left_join(fin_tax %>% filter(count > 0) %>%
-              group_by(biota, person) %>%
-              summarise(all_otus= n_distinct(names)), by=join_by('biota', 'person')) %>%
-  mutate(percentage_core = (core_otus/all_otus)*100) 
-
-core_percent %>% ggplot(aes(x = biota, y=percentage_core)) +
-  geom_boxplot()
-
-
-# CORE SPOROBIOTA and MICROBIOTA on the level of Firmicutes! 
-# Taxonomy of just core and relabund of just core 
-fin_tax %>% pivot_wider(names_from = 'level', values_from = 'taxon') %>%
-  filter(Phylum == 'Firmicutes' & prevalence == c(11, 12)) %>%
-  ggplot(aes(x = biota, fill = Order)) +
-  geom_bar(stat = 'count')
-
-# relative abundance is higer in the EtOH fraction, bcouse we remmoved a lot of bacteria from the sample. 
-fin_tax %>% pivot_wider(names_from = 'level', values_from = 'taxon') %>%
-  filter(Phylum == 'Firmicutes' & prevalence == c(11, 12)) %>%
-  ggplot(aes(x=biota, y=mean_rel_abund)) +
-  geom_boxplot() +
-  scale_y_log10()
-
-core_percent_fimicutes = fin_tax %>% pivot_wider(names_from = 'level', values_from = 'taxon') %>%
-  filter(Phylum == 'Firmicutes' & prevalence == c(11, 12)) %>%
-  group_by(biota, person) %>%
-  summarise(core_otus = n_distinct(names)) %>%
-  left_join(fin_tax %>% filter(count > 0) %>%
-              group_by(biota, person) %>%
-              summarise(all_otus= n_distinct(names)), by=join_by('biota', 'person')) %>%
-  mutate(percentage_core = (core_otus/all_otus)*100) 
-
-core_percent_fimicutes %>% ggplot(aes(x = biota, y=percentage_core)) +
-  geom_boxplot()
+  scale_fill_manual(values = colem) +
+  labs(x = 'Days present in the gut', y= 'log10(mean relative abundance)', fill = 'Fraction')
+ggsave('out/ethanol_resistantVSmicrobiota/occupancy_relabund.png', dpi=600)
 
 ## OTUs that are present in only one person VS at least 2 people ? Present in a person if at least 1! 
-otuPA_EM = as.data.frame(otutabEM) %>% 
-  mutate(across(everything(), ~ if_else(. > 0, 1, 0))) 
-
-otuPerFraction = otuPA_EM %>%
+otu_presence = as.data.frame(otutabEM) %>%
   rownames_to_column('Group') %>%
-  mutate(biota = substr(Group, 1, 1), 
-         person = substr(Group, 2, 2), 
-         time_point = as.numeric(gsub("[^0-9]", "", Group))) %>%
-  pivot_longer(values_to = 'value', names_to = 'name', cols=starts_with('Otu')) %>%
+  pivot_longer(-Group) %>%
+  left_join(metadata, by = 'Group') %>%
   group_by(biota, person, name) %>%
   # If OTU is present at least 1 time than it is present in a person
-  summarise(PA = ifelse(sum(value) > 0, 1, 0), .groups = 'drop') %>%
-  pivot_wider(values_from = 'PA', names_from = 'person') %>%
-  mutate(per_person = rowSums(.[3:11])) %>%
-  left_join(taxtab, by ='name')
+  summarise(PA = ifelse(sum(value) > 1, 1, 0), .groups = 'drop') %>%
+  pivot_wider(values_from = 'PA', names_from = 'person', values_fill = 0) %>%
+  mutate(number_people = rowSums(.[3:11])) %>%
+  left_join(taxtab, by ='name') %>%
+  filter(number_people > 0) 
 
-otuPerFraction %>% filter(per_person > 0) %>%
-  ggplot(aes(x=per_person, fill= Phylum)) +
-  geom_bar(stat = 'count') +
+otu_presence %>%
+  pivot_longer(values_to = 'taxon', names_to = 'level', cols = 13:18) %>%
+  filter(level == 'Phylum') %>%
+  group_by(biota, number_people, taxon) %>%
+  summarise(number_otus = n_distinct(name)) %>%
+  mutate(taxon_fin = ifelse(number_otus > 10, taxon, 'Less than 10 OTUs')) %>%
+  ggplot(aes(x = number_people, y = number_otus, fill= taxon_fin)) +
+  geom_bar(stat = 'identity') +
   facet_grid(~biota) +
-  scale_x_continuous(breaks = seq(0,9, by=1) )
+  scale_x_continuous(breaks = seq(0,9, by=1) ) +
+  labs( x = 'Number of individuals in which OTU is present', y = 'Number of OTUs', fill = 'Phylum')
+ggsave('out/ethanol_resistantVSmicrobiota/otu_presentInIndividuals_taxonomy.png', dpi=600)
 
-otuPerFraction %>% filter(per_person > 0) %>%
-  mutate(at_least = ifelse(per_person == 1, TRUE, FALSE)) %>%
-  ggplot(aes(x= biota, fill=as.factor(at_least))) +
-  geom_bar(position = 'fill')
-
+# 
+otu_presence %>% 
+  filter(number_people > 0) %>%
+  mutate(at_least = ifelse(number_people > 2, TRUE, FALSE)) %>%
+  group_by(biota, at_least) %>%
+  summarise(n_otu = n_distinct(name)) %>%
+  ggplot(aes(x= biota, y = n_otu, fill=as.factor(at_least))) +
+  geom_bar(stat = 'identity', position = 'fill') +
+  scale_fill_manual(values =  colem) +
+  labs(x = '', y='Number of OTUs', fill = 'Is it present in more than 2 people?')
+ggsave('out/ethanol_resistantVSmicrobiota/present_in_2ormore.png', dpi=600)
 
 ####
 # Present in a person if in the core! 
