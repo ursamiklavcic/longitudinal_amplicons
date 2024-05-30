@@ -4,15 +4,13 @@
 # Sporobiota are OTus found in bot communities and relative abundances taken from microbiota samples as they are not skewed from removal of non-EtOH resistant bacteria. 
 # also they have to be Firmicutes(Bacillota), as this is the only phylum in gut that has genes gor endosporulation! 
 
-library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
+library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1") 
 library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
 library(tidyverse)
 library(vegan)
-library(lubridate)
 library(ape)
-library(ggrepel)
 library(ggpubr)
-# library(phyloseq) which we will need further down in the code. 
+library(phyloseq)
 
 set.seed(96)
 theme_set(theme_bw())
@@ -21,12 +19,7 @@ load("~/projects/longitudinal_amplicons/data/r_data/basic_data.RData")
 # Colors 
 colm=c('#47B66A') # green 
 cole=c('#D9A534') # yellow
-cols=c('#2294E3') # blue
 colem= c('#47B66A', '#D9A534')
-colsm=c('#47B66A', '#2294E3')
-colesm=c('#D9A534', '#47B66A', '#2294E3')
-individuals = c('#e02416','#f2990a', '#127a10', '#1e9c99', 
-                '#5f71e8', '#a34ce6', '#d609b1', '#e4e805', '#eb0e6a')
 
 ## Compositon 
 # How to best show differences between absolute and relative abundances?
@@ -505,7 +498,6 @@ cor.test(as.numeric(dist_timeE$diff), dist_timeE$median, method='pearson')
 
 ##
 # UniFrac 
-library(phyloseq)
 ps = phyloseq(otu_table(as.matrix(seqtab), taxa_are_rows = FALSE), 
               sample_data(seq_metadata %>% column_to_rownames('Group')), 
               tax_table(as.matrix(seq_taxtab)), 
@@ -802,91 +794,36 @@ ggsave('out/ethanol_resistantVSmicrobiota/otu_presentInIndividuals_taxonomy.png'
 # 
 otu_presence %>% 
   filter(number_people > 0) %>%
-  mutate(at_least = ifelse(number_people > 2, TRUE, FALSE)) %>%
+  mutate(at_least = ifelse(number_people > 2, 'Two people or more', 'Less than 2 people')) %>%
   group_by(biota, at_least) %>%
   summarise(n_otu = n_distinct(name)) %>%
   ggplot(aes(x= biota, y = n_otu, fill=as.factor(at_least))) +
   geom_bar(stat = 'identity', position = 'fill') +
-  scale_fill_manual(values =  colem) +
-  labs(x = '', y='Number of OTUs', fill = 'Is it present in more than 2 people?')
+  scale_fill_manual(values =  c('#336AC2', '#BC3C17')) +
+  labs(x = '', y='Number of OTUs', fill = '')
 ggsave('out/ethanol_resistantVSmicrobiota/present_in_2ormore.png', dpi=600)
 
-####
-# Present in a person if in the core! 
-# Same as above but CORE 
-otuPerFraction = otuPA_EM %>%
-  rownames_to_column('Group') %>%
-  mutate(biota = substr(Group, 1, 1), 
-         person = substr(Group, 2, 2), 
-         time_point = as.numeric(gsub("[^0-9]", "", Group))) %>%
-  pivot_longer(values_to = 'value', names_to = 'name', cols=starts_with('Otu')) %>%
-  group_by(biota, person, name) %>%
-  # If OTU is present at least 11 times than it is present in a person AKA CORE
-  summarise(PA = ifelse(sum(value) > 11, 1, 0), .groups = 'drop') %>%
-  pivot_wider(values_from = 'PA', names_from = 'person') %>%
-  mutate(per_person = rowSums(.[3:11])) %>%
-  left_join(taxtab, by ='name')
+# What fraction of this Two people or more in microbiota is also found in EtOH resistant fraction
+otu_atleast = otu_presence %>%
+  filter(number_people > 0) %>%
+  mutate(at_least = ifelse(number_people > 2, 'Two people or more', 'Less than 2 people')) %>%
+  group_by(biota, at_least) %>%
+  summarise(name_otu = list(unique(name)), .groups = 'drop') %>%
+  unnest(name_otu) 
 
-otuPerFraction %>% filter(per_person > 0) %>%
-  ggplot(aes(x=per_person, fill= Phylum)) +
-  geom_bar(stat = 'count') +
-  facet_grid(~biota) +
-  scale_x_continuous(breaks = seq(0,9, by=1) )
+otu_etoh = otu_atleast %>% 
+  filter(biota == 'Ethanol resistant fraction') %>%
+  pull(name_otu)
 
-otuPerFraction %>% filter(per_person > 0) %>%
-  mutate(at_least = ifelse(per_person == 1, TRUE, FALSE)) %>%
-  ggplot(aes(x= biota, fill=as.factor(at_least))) +
-  geom_bar(position = 'fill')
-
-otuPerFraction %>% filter(per_person > 0) %>%
-  mutate(at_least = ifelse(per_person == 1, TRUE, FALSE)) %>%
-  filter(Phylum == 'Firmicutes') %>%
-  ggplot(aes(x = at_least, fill=Order)) +
-  geom_bar(position='fill') +
-  facet_grid(~biota)
-
-###
-# For submission 
-###
-
-# Beta diversity through time (unweighted UniFrac)
-library(phyloseq)
-ps = phyloseq(otu_table(as.matrix(seqtab), taxa_are_rows = FALSE), 
-              sample_data(seq_metadata %>% column_to_rownames('Group')), 
-              tax_table(as.matrix(seq_taxtab)), 
-              phy_tree(tree))
-
-# unweighted UniFrac
-unifrac_u = UniFrac(ps, weighted = FALSE, parallel = TRUE)
-
-# Calculate if there is a difference in the distance between samples of individuals 
-# if they were sampled closer together and more appart between microbiota and sporobiota. 
-unifrac_time = as.matrix(unifrac_u) %>% 
-  as_tibble(rownames= 'Group') %>%
-  pivot_longer(-Group) %>%
-  # Remove the distances of the same sample 
-  filter(Group != name) %>%
-  # Add metadata
-  left_join(seq_metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(seq_metadata %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
-  # Filter so that I have only inter-person comparisons!
-  mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
-         which_biota= ifelse(biota.x == 'microbiota' & biota.y == 'microbiota', 'Microbiota',
-                             ifelse(biota.x == 'sporobiota' & biota.y == 'sporobiota', 'EtOH fraction', 'Both'))) %>%
-  filter(which_biota != 'Both' & same_person != 'Different individual') %>%
-  # Calculate the difference between sampling times
-  mutate(diff=abs(date.y-date.x)) %>%
-  # group by difference between days and person
-  group_by(which_biota, diff, person.x) %>%
-  summarise(median=median(value), sd= sd(value)) %>%
-  ungroup()
-
-ggplot(unifrac_time, aes(x=diff, y=median, color=which_biota)) +
-  geom_point() +
-  scale_color_manual(values=c(colm, cole)) +
-  geom_smooth(aes(group=which_biota), method = 'lm') +
-  labs(x='Number of days between sampling points', y='Median unweighted UniFrac distance', color='Fraction') +
-  ggpubr::stat_cor(method = 'pearson', alternative = "greater") +
-  annotate('text', x=32, y=Inf,label = "Pearson's correlation", hjust = 1.1, vjust = 2, size = 4)
-
-ggsave('submission/unweightedUniFrac_time.png', dpi=600)
+otu_atleast %>% group_by(biota, at_least) %>%
+  # If also present in EtOH = 1, otherwise 0.5
+  mutate(present_etoh = ifelse(name_otu %in% otu_etoh, 'Present in EtOH fraction', 'Not in EtOH fraction')) %>%
+  ungroup() %>%
+  group_by(biota, at_least, present_etoh) %>%
+  summarise(n_otu = n_distinct(name_otu)) %>%
+  ggplot(aes( x= biota, y = n_otu, fill = at_least, alpha = present_etoh)) +
+  geom_bar(stat = 'identity', position = 'fill') +
+  scale_fill_manual(values =  c('#336AC2', '#BC3C17')) +
+  scale_alpha_manual(values = c('Not in EtOH fraction' = 0.6, 'Present in EtOH fraction' = 1)) +
+  labs( x= '', y= 'Number of OTUs', color ='', alpha = '')
+ggsave('out/ethanol_resistantVSmicrobiota/present_in2ormore_etohAlso.png', dpi=600) 
