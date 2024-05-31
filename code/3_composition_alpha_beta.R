@@ -827,3 +827,106 @@ otu_atleast %>% group_by(biota, at_least) %>%
   scale_alpha_manual(values = c('Not in EtOH fraction' = 0.6, 'Present in EtOH fraction' = 1)) +
   labs( x= '', y= 'Number of OTUs', color ='', alpha = '')
 ggsave('out/ethanol_resistantVSmicrobiota/present_in2ormore_etohAlso.png', dpi=600) 
+
+# Neutral model 
+# Occupancy plot (code by Shade and Stopnisek)
+tab = as.data.frame(otutabEM) %>% 
+  rownames_to_column('Group') %>%
+  filter(str_detect(Group, '^M')) %>% 
+  column_to_rownames('Group') %>% 
+  t() 
+
+otu_PA <- 1*((tab>0)==1)                                              # presence-absence data 
+otu_occ <- rowSums(otu_PA)/ncol(otu_PA)                                # occupancy calculation
+otu_rel <- apply(decostand(tab, method="total", MARGIN=2),1, mean)     # mean relative abundance
+occ_abun <- data.frame(otu_occ=otu_occ, otu_rel=otu_rel) %>%           # combining occupancy and abundance data frame
+  rownames_to_column('name') %>%
+  left_join(taxtab, by='name')
+
+# Occupancy abundance plot:
+plot1 =ggplot(data=occ_abun, aes(x=log10(otu_rel), y=otu_occ)) +
+  geom_point(pch=21, fill=colm) +
+  labs(x="log10(mean relative abundance)", y="Occupancy") 
+
+# For ethanol resistant fraction
+tab = as.data.frame(otutabEM) %>% 
+  rownames_to_column('Group') %>%
+  filter(str_detect(Group, '^S')) %>% 
+  column_to_rownames('Group') %>% 
+  t() 
+
+otu_PA <- 1*((otutab>0)==1)                                             
+otu_occ <- rowSums(otu_PA)/ncol(otu_PA)                               
+otu_rel <- apply(decostand(otutab, method="total", MARGIN=2),1, mean)     
+occ_abun <- data.frame(otu_occ=otu_occ, otu_rel=otu_rel) %>%        
+  rownames_to_column('name') %>%
+  left_join(taxtab, by='name')
+
+# Occupancy abundance plot:
+plot2 = ggplot(data=occ_abun, aes(x=log10(otu_rel), y=otu_occ)) +
+  geom_point(pch=21, fill=cole) +
+  labs(x="log10(mean relative abundance)", y="Occupancy") 
+#facet_wrap(~Phylum, ncol=3, nrow = 4)
+
+ggarrange(plot1 + rremove("ylab") + rremove("xlab"), 
+          plot2 + rremove("ylab"), 
+          labels = NULL, 
+          ncol=1)
+ggsave('out/ethanol_resistantVSmicrobiota/neutral_model_both.png', dpi=600)
+
+# New OTUs 
+# OTUs that were never seen before!
+new_otus = as.data.frame(otutabEM) %>% 
+  rownames_to_column('Group') %>%
+  left_join(metadata, by = 'Group') %>%
+  pivot_longer(names_to = 'name', values_to = 'value', cols = starts_with('Otu')) %>%
+  mutate(PA = ifelse(value > 0, 1, 0)) %>%
+  # Group the dataframe by person and otu (OTUs)
+  group_by(biota, person, name) %>% 
+  # Arrange by day
+  arrange(day, .by_group = TRUE) %>%
+  mutate(otu_cumsum = cumsum(PA), 
+         new_otu = ifelse(otu_cumsum == 1 & lag(otu_cumsum, default = 0) == 0, 1, 0)) %>%
+  ungroup() 
+
+new_otus %>%
+  group_by(biota, person, day) %>%
+  summarise(new = sum(new_otu), .groups = 'drop') %>%
+  ggplot(aes(x=day, y=new, color=biota)) +
+  geom_point(size=3) +
+  geom_smooth(se = FALSE) +
+  scale_color_manual(values = colem) +
+  labs(x='Day of sampling', y='Number of new OTUs', color='Fraction') 
+ggsave('out/ethanol_resistantVSmicrobiota/number_newOTUs.png', dpi=600)
+
+# What about percentages ?
+new_otus %>%
+  group_by(biota, person, day) %>%
+  summarise(new = sum(new_otu), .groups = 'drop') %>%
+  group_by(biota, person) %>%
+  mutate(percent_new = new/sum(new)*100) %>%
+  ggplot(aes(x=day, y=percent_new, color=biota)) +
+  geom_point(size=3) +
+  geom_smooth(se = FALSE) +
+  scale_color_manual(values = colem) +
+  labs(x='Day of sampling', y='Percent of new OTUs based on all OTUs of a person', color='Fraction') 
+ggsave('out/ethanol_resistantVSmicrobiota/percent_newOTUs.png', dpi=600)
+
+# In which fraction is there more new OTUs? stat_compare_means
+new_otus %>%
+  group_by(biota, person, day) %>%
+  summarise(new = sum(new_otu), .groups = 'drop') %>%
+  group_by(biota, person) %>%
+  mutate(percent_new = new/sum(new)*100) %>%
+  filter(day > 14) %>%
+  ggplot(aes(x = biota, y = percent_new, fill = biota)) +
+  geom_boxplot() +
+  scale_fill_manual(values = colem) +
+  stat_compare_means() +
+  labs(x = '', y = 'Percent of new OTUs based on all OTUs of a person', fill='')
+ggsave('out/ethanol_resistantVSmicrobiota/percent_newOTUs_boxplot.png', dpi=600)
+
+
+
+
+
