@@ -118,6 +118,7 @@ max(counttab_stat$sum) #880447
 min(counttab_stat$sum) #59870
 mean(counttab_stat$sum) #264166.3
 median(counttab_stat$sum) #230052.5
+sum(counttab_stat$sum)# 61286585
 
 # Stat on sequences
 counttab_stat_seq = counttab %>% 
