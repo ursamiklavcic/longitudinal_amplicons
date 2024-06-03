@@ -279,26 +279,6 @@ rownames_to_column(as.data.frame(positions), 'Group') %>%
   as_tibble() %>% 
   group_by(biota, person) %>%
   reframe(centroid = mean(pcoa1))
-
-# PCoA unweighted 
-unifrac_u = UniFrac(ps, weighted = FALSE)
-pcoa = cmdscale(unifrac_u, k=2, eig=TRUE, add=TRUE)
-positions = pcoa$points
-colnames(positions) <- c('pcoa1', 'pcoa2')
-
-percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
-
-positions %>%
-  as_tibble(rownames = 'Group') %>%
-  left_join(metadata, by='Group') %>%
-  ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
-  geom_point(size=3) +
-  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
-       y=paste0(round(percent_explained[2], digits = 1), '%'), 
-       color = 'Individual') 
-ggsave('out/ethanol_resistantVSmicrobiota/PCOA_unweighted.png', dpi=600)
-# PCoA only explains in 2 axis ~30% of variation of my data 
-
 # Calculate if there is a difference in the distance between samples of individuals if they were; 
 # sampled closer together and more appart between microbiota and ethanol resistant fraction 
 unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
@@ -320,7 +300,26 @@ unifracW_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   labs(y="weighted UniFrac distance", x="", fill='Type of sample')
 ggsave('out/ethanol_resistantVSmicrobiota/weighted_boxplot.png', dpi=600)
 
-# Unweighted UniFrac
+# PCoA unweighted 
+unifrac_u = UniFrac(ps, weighted = FALSE)
+pcoa = cmdscale(unifrac_u, k=2, eig=TRUE, add=TRUE)
+positions = pcoa$points
+colnames(positions) <- c('pcoa1', 'pcoa2')
+
+percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
+
+positions %>%
+  as_tibble(rownames = 'Group') %>%
+  left_join(metadata, by='Group') %>%
+  ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
+  geom_point(size=3) +
+  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
+       y=paste0(round(percent_explained[2], digits = 1), '%'), 
+       color = 'Individual') 
+ggsave('out/ethanol_resistantVSmicrobiota/PCOA_unweighted.png', dpi=600)
+# PCoA only explains in 2 axis ~30% of variation of my data 
+
+# 
 unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   rownames_to_column('Group') %>%
   pivot_longer(-Group) %>%
@@ -334,14 +333,13 @@ unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   filter(which_biota != 'Both')
 
 unifracU_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
-  geom_boxplot() +
-  #geom_violin(draw_quantiles = c(0.5)) +
+  #geom_boxplot() +
+  geom_violin(draw_quantiles = c(0.5)) +
   scale_fill_manual(values = colem) +
   #geom_point(size=0.5, alpha=0.3) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
   labs(y="unweighted UniFrac distance", x="", fill='Type of sample')
 ggsave('out/ethanol_resistantVSmicrobiota/unweighted_boxplot.png', dpi=600)
-
 
 # UniFrac through time 
 diff_timeU = unifracU_df %>%
@@ -351,8 +349,7 @@ diff_timeU = unifracU_df %>%
   mutate(diff=as.integer(abs(date.x-date.y))) %>%
   # group by difference between days and person
   group_by(which_biota, person.x, diff) %>%
-  summarise(median=median(value), sd= sd(value)) %>%
-  ungroup() 
+  summarise(median=median(value), .groups = 'drop')
 
 ggplot(diff_timeU, aes(x=diff, y=median, color=which_biota)) +
   geom_point() +
@@ -367,10 +364,11 @@ ggsave('out/ethanol_resistantVSmicrobiota/unweighted_time.png', dpi=600)
 dist_unweighted_norm = unifracU_df %>%
   filter(same_person == 'Same individual') %>%
   group_by(person.x, which_biota) %>%
-  # z-score normalization 
-  mutate(z_norm_value = ((value-mean(value)/sd(value))), 
-         # max-min normalization
-         min_max_norm = (value - min(value))/(max(value) - min(value)))
+          
+  mutate(# z-score normalization 
+    z_norm_value = ((value-mean(value)/sd(value))), 
+    # max-min normalization
+    min_max_norm = (value - min(value))/(max(value) - min(value)))
 
 dist_unweighted_norm_time = dist_unweighted_norm %>%
   mutate(diff=as.integer(abs(date.x-date.y))) %>%
@@ -397,3 +395,24 @@ dist_unweighted_norm_time %>%
   #stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
   labs(x='Days between sampling points', y='Median min-max normalized unweighted UniFrac distance', color='Fraction')
 ggsave('out/ethanol_resistantVSmicrobiota/unweighted_time_minmax_normlaized.png', dpi=600)
+
+# What if distances were normalized based on biota? 
+distU_normal = unifracU_df %>%
+  group_by(which_biota, person.x, person.y) %>%
+  mutate(z_norm_value = ((value-mean(value)/sd(value))), 
+         min_max_norm = (value - min(value))/(max(value) - min(value)))
+
+# difference between fractions and same/different individual
+distU_normal %>%
+  ggplot(aes(x=same_person, y=min_max_norm, fill=which_biota)) +
+  geom_boxplot() +
+  scale_fill_manual(values = colem) +
+  #geom_point(size=0.5, alpha=0.3) +
+  stat_compare_means(aes(group=paste0(same_person, which_biota))) +
+  labs(y="unweighted UniFrac distance", x="", fill='Type of sample')
+
+dist_unweighted_norm_time = dist_unweighted_norm %>%
+  mutate(diff=as.integer(abs(date.x-date.y))) %>%
+  group_by(which_biota, person.x, diff) %>%
+  summarise(median=median(min_max_norm), sd= sd(min_max_norm)) %>%
+  ungroup() 
