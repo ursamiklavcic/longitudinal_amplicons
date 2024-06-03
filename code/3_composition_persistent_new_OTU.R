@@ -121,6 +121,28 @@ ggarrange(rel_fimicutes, abs_firmicutes,
           legend = 'right')
 ggsave('out/ethanol_resistantVSmicrobiota/rel_abs_firmicutes.png', dpi=600)
 
+# Composition of ethanol resistant fraction 
+otutab_explore = otutabEM %>% as.data.frame() %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  left_join(taxtab, by = 'name') %>%
+  left_join(metadata, by = 'Group')
+
+otutab_explore %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value)) %>%
+  filter(Phylum == 'Actinobacteria') %>%
+  ggplot(aes (x = biota, y = rel_abund, fill = Family)) +
+  geom_bar(stat = 'identity')
+
+otutab_explore %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value)) %>%
+  ungroup() %>%
+  group_by(biota, Family) %>%
+  summarise(sum= sum(rel_abund)) %>%
+  print(n = 144)
+
 # Core community analysis 
 # Core OTUs are those present in at least 11 time-points, irregardles of their relative or absolute abundance
 core_otus = as.data.frame(otutabEM) %>% rownames_to_column('Group') %>%
