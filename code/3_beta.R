@@ -333,12 +333,12 @@ unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   filter(which_biota != 'Both')
 
 unifracU_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
-  #geom_boxplot() +
-  geom_violin(draw_quantiles = c(0.5)) +
+  geom_boxplot() +
+  #geom_violin(draw_quantiles = c(0.5)) +
   scale_fill_manual(values = colem) +
   #geom_point(size=0.5, alpha=0.3) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
-  labs(y="unweighted UniFrac distance", x="", fill='Type of sample')
+  labs(y="unweighted UniFrac distance", x="", fill='Fraction')
 ggsave('out/ethanol_resistantVSmicrobiota/unweighted_boxplot.png', dpi=600)
 
 # UniFrac through time 
@@ -409,7 +409,7 @@ distU_normal %>%
   scale_fill_manual(values = colem) +
   #geom_point(size=0.5, alpha=0.3) +
   stat_compare_means(aes(group=paste0(same_person, which_biota))) +
-  labs(y="unweighted UniFrac distance", x="", fill='Type of sample')
+  labs(y="unweighted UniFrac distance", x="", fill='Fraction')
 
 dist_unweighted_norm_time = dist_unweighted_norm %>%
   mutate(diff=as.integer(abs(date.x-date.y))) %>%
