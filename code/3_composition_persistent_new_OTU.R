@@ -157,7 +157,7 @@ core_otus = as.data.frame(otutabEM) %>% rownames_to_column('Group') %>%
   ungroup() %>%
   filter(otu_cumsum %in% c(11, 12)) %>%
   group_by(biota, person) %>%
-  summarise(name = list(unique(name)))
+  summarise(name = list(unique(name)), .groups = 'drop')
 
 unnest(core_otus, name) %>%
   left_join(taxtab, by = 'name') %>%
@@ -169,7 +169,35 @@ unnest(core_otus, name) %>%
   facet_wrap(vars(person), scales = 'free_y') +
   labs( x = '', y= 'Number of unique OTUs', fill = 'Class')
 ggsave('out/ethanol_resistantVSmicrobiota/core_taxonomy.png', dpi = 600)   
-    
+  
+# OTUs shared between all individuals 
+core_all = unnest(core_otus, name) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = 'person', values_from = 'value', values_fill = 0) %>%
+  group_by(biota, name) %>%
+  summarise(sum_all = sum(A+B+C+D+E+F+G+H+I)) %>%
+  filter(sum_all == 9) %>%
+  left_join(taxtab, by = 'name') 
+
+core_all %>%
+  ggplot(aes(x = biota, fill = Class)) +
+  geom_bar( stat = 'count') +
+  labs(x = '', y = 'Number of OTUs present in all individuals across all time points')
+ggsave('out/ethanol_resistantVSmicrobiota/otus_across_allPeople.png', dpi=600)
+
+otu_mean = otutab_absrel %>%
+  group_by(name) %>%
+  summarise(mean_relabund = mean(rel_abund))
+
+core_all %>%
+  left_join(otu_mean, by = 'name') %>%
+  ggplot(aes(x = biota, y=mean_relabund)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  labs(x = '', y= 'Mean relative abundance of OTUs present in all individuals across all time points')
+ggsave('out/ethanol_resistantVSmicrobiota/relabund_across_allPeople.png', dpi=600)
+
+
 ####
 # Persistence of OTUs 
 ####
