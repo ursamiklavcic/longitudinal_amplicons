@@ -45,6 +45,7 @@ otutabEM_pre = shared_pre %>%
 # Rarefy the data once - as we sequenced so deep that for the first analysis this is not crucial !
 otutabEM = rrarefy(otutabEM_pre, sample=reads_per_sample)
 saveRDS(otutabEM, 'data/r_data/otutabEM.RDS')
+write.csv(as.data.frame(otutabEM) %>% rownames_to_column('Group'), 'data/csv_files/otutab_filt.csv', row.names=FALSE)
 
 # Extract OTUs that are present rarefied table 
 otu_names = as.data.frame(otutabEM) %>% colnames() 
@@ -59,6 +60,7 @@ taxtab = read_tsv('data/mothur/final.opti_mcc.0.03.cons.taxonomy') %>%
            sep=";") 
 
 saveRDS(taxtab, 'data/r_data/taxonomy.RDS')
+write.csv(taxtab, 'data/csv_files/taxtab_filt.csv', row.names=FALSE)
 
 # Import metadata
 metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
@@ -67,6 +69,7 @@ metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   mutate(biota = ifelse(biota == 'microbiota', 'Microbiota', 'Ethanol resistant fraction'))
 
 saveRDS(metadata, 'data/r_data/metadata.RDS')
+write.csv(metadata, 'data/csv_files/metadata_file.csv', row.names = FALSE)
 
 # Data for sporobiota VS microbiota 
 otu_long = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
@@ -91,7 +94,7 @@ otutabSM = select(otutab_pre, 'Group' = 'Group.x', name, 'value' = 'value.x') %>
           pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0)) %>%
   column_to_rownames('Group')
 saveRDS(otutabSM, 'data/r_data/otutabSM.RDS')
-
+write.csv(as.data.frame(otutabSM) %>% rownames_to_column('Group'), 'data/csv_files/otutabSM_filt.csv', row.names = FALSE)
 ## 
 # Phylogenetic analysis 
 # Load tree file from mafft 
