@@ -491,5 +491,43 @@ ggplot(new_abund_day, aes(x= day, y= mean_absabund, color = biota)) +
   labs(x = 'Day', y= 'Mean absolute abundance of OTU', color = '')
 ggsave('out/ethanol_resistantVSmicrobiota/correlation_newOTU_relabund.png', dpi=600)
 
+# Relative abunance in micrbiota vs ethanol resistant fraction
+otutab_mean = otutab_absrel %>%
+  left_join(metadata, by = 'Group') %>%
+  group_by(biota, name) %>%
+  reframe(mean_value = mean(value), 
+          mean_rel = mean(rel_abund), 
+          mean_abs = mean(abs_abund_ng))
+
+plot_mean = otutab_mean %>% filter(biota == 'Microbiota') %>%
+  left_join(otutab_mean %>% filter(biota == 'Ethanol resistant fraction'), by ='name') %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(Phylum %in% c('Actinobacteria', 'Bacteria_unclassified', 'Bacteroidetes', 'Firmicutes', 
+                       'Proteobacteria', 'Verrucomicrobia'))
+
+ggplot(plot_mean, aes(x = log10(mean_rel.x), y = log10(mean_rel.y))) +
+  geom_point(mapping = aes( color = Class), size = 2) +
+  geom_smooth(method = 'lm') +
+  facet_wrap(vars(Phylum), scales = 'free') +
+  labs(x = 'log10(mean relative abundance in microbiota)', y = 'log10(mean relative abundance in ethanol resistant fraction')
+
+plot_mean %>%
+  filter(Phylum == 'Firmicutes') %>%
+  ggplot(aes(x = log10(mean_rel.x), y = log10(mean_rel.y))) +
+  geom_point(mapping = aes( color = Family), size = 2) +
+  geom_smooth(method = 'lm') +
+  labs(x = 'log10(mean relative abundance in microbiota)', y = 'log10(mean relative abundance in ethanol resistant fraction', title = 'Bacillota')
+
+
+
+
+
+
+
+
+
+
+
+
 
 
