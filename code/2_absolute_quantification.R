@@ -69,3 +69,5 @@ otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   select(Group, name, value, rel_abund, abs_abund_ng)
 
 saveRDS( otutab_absrel, 'data/r_data/otutab_absabund.RDS')
+write.csv(otutab_absrel, 'data/csv_files/otutab_absrel_long.csv', row.names = FALSE)
+
