@@ -12,16 +12,80 @@
 # Libraries 
 library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
 library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
-library(tidyverse)
-library(vegan)
-library(lubridate)
-library(ape)
-library(ggrepel)
-library(ggpubr)
+library(dplyr)
+library(ggplot2)
 
 set.seed(96)
 theme_set(theme_bw())
 
+# Are there drops in relative abundance in time?
+otutab_absrel %>% 
+  filter(substr(Group, 1, 1) == 'M') %>% 
+  filter(rel_abund > 0.001) %>%
+  left_join(metadata, by = 'Group') %>%
+  ggplot(aes(x = day, y = rel_abund, color = name)) +
+  geom_line(show.legend = FALSE) +
+  scale_y_log10() +
+  facet_wrap(vars(person)) 
+ggsave('out/ethanol_resistantVSmicrobiota/relabund_time.png', dpi=600)
+
+# Calculateing stationary/stohastic OTU 
+## select only OTUs that are always present 
+# calculate all possible time-spans for an OTU of an individual 
+# calculate difference bwteen abs abund of OTU and abs abund of OTU + difference to all other time-points 
+# calculate sum bwteen abs abund of OTU and abs abund of OTU + difference to all other time-points
+# divide this two and square them 
+
+
+
+# prepare to remove OTUs that are not present in all time-points
+otus_present = otutab_absrel %>%
+  left_join(select(metadata, Group, biota, person, day), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(PA = ifelse(value > 0, 1, 0)) %>%
+  ungroup() %>%
+  group_by(biota, person, name) %>%
+  summarise(sumPA = sum(PA))
+
+#time_spans 
+otutab_absrel %>%
+  left_join(select(metadata, Group, biota, person, day), by = 'Group') %>%
+  group_by(biota, person) %>%
+  summarise(span = max(day) - min(day)) %>%
+  mutate(time_spans = 1:span)
+  
+  
+  
+  for (i in 1:9) {
+    times <- select(tab[[i]], day)
+    spans <- max(times) - min(times)
+    T[[i]] <- 1:spans
+  }
+  
+disimilarity_rel = otutab_absrel %>%
+  left_join(select(metadata, Group, biota, person, day), by = 'Group') %>%
+  left_join(otus_present, by = c('biota', 'person', 'name')) %>%
+  # remove OTUs that are not present in all time-points
+  filter(sumPA > 12) %>%
+  select(-sumPA) %>%
+  # for every fraction, person and OTU 
+  group_by(biota, person, name) %>%
+  # how to calculate d and s not just for 1 time-point back but all time-points
+  arrange(day, .by_group = TRUE) %>%
+  mutate(d = lead(rel_abund) - rel_abund, 
+         s = lead(rel_abund) + rel_abund, 
+         phi = (d^2 - s) / (s^2 - s)) %>%
+  ungroup()
+  
+ggplot(dissimilarity_rel, aes(x=day, y=phi, color=name)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(vars(biota), nrow = 2, scales = 'free_y')
+
+
+  
+  
+
+  
 # Import metadata
 metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   mutate(date=dmy(date))
@@ -61,30 +125,7 @@ for (i in 1:9) {
   tab[[i]] = select(tab[[i]], -person)
 }
 
-# Function to calculate phi for each indivicual
-computephi_i <- function(n1, n2) {  # OTUs from t1 and t2 
-  #n1 <- equalize(n1, n2)  # from rel_abund to abs_abund  
-  #n2 <- equalize(n2, n1)
-  d <- n1 - n2  # difference between abs abund of OTU in time t1 and t2
-  s <- n1 + n2  # total between abs abund of OTU at time t1 and t2
-  d <- d[-length(d)]  # leave out unassigned # remove OTUs that do not have assigned taxonomy? 
-  s <- s[-length(s)]  # leave out unassigned
-  phi <- (d^2 - s) / (s^2 - s) # calculate the phi value for an individual
-  return(phi)
-}
 
-# Function to normalize relative abundances to 'absolute abundances'
-equalize <- function(n1, n2) {
-  n = sum(n2)
-  if (sum(n1) <= n) {
-    return(n1)
-  } else {
-    list <- unlist(map(seq_along(n1), ~rep(.x, n1[.x])))
-    downsampled <- sample(list, n, replace = TRUE)
-    n_new <- tabulate(downsampled, length(n1))
-    return(n_new)
-  }
-}
 
 # Loop over each individual by name
 for (i in 1:9) {
@@ -135,12 +176,6 @@ for (k in 1:16) {
   }
 }
 
-## Again my understanding of the code 
-
-tab %>%
-  group_by(person) %>%
-  # calucltate phi for each OTU for each time point against all other time points and take the mean? 
-  
 
 
 
