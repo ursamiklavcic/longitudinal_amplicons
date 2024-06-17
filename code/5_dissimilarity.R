@@ -48,36 +48,30 @@ otus_present = otutab_absrel %>%
   summarise(sumPA = sum(PA))
 
 #time_spans 
-otutab_absrel %>%
+spans = otutab_absrel %>%
   left_join(select(metadata, Group, biota, person, day), by = 'Group') %>%
   group_by(biota, person) %>%
-  summarise(span = max(day) - min(day)) %>%
-  mutate(time_spans = 1:span)
-  
-  
-  
-  for (i in 1:9) {
-    times <- select(tab[[i]], day)
-    spans <- max(times) - min(times)
-    T[[i]] <- 1:spans
-  }
-  
-disimilarity_rel = otutab_absrel %>%
+  summarise(span = max(day) - min(day), .groups = 'drop') %>%
+  group_by(biota, person) %>%
+  mutate(time_spans = list(1:span))
+
+dissimilarity_abs = otutab_absrel %>%
   left_join(select(metadata, Group, biota, person, day), by = 'Group') %>%
   left_join(otus_present, by = c('biota', 'person', 'name')) %>%
+  left_join(spans, by = c('biota', 'person')) %>%
   # remove OTUs that are not present in all time-points
-  filter(sumPA > 12) %>%
+  filter(sumPA == 12) %>%
   select(-sumPA) %>%
   # for every fraction, person and OTU 
   group_by(biota, person, name) %>%
   # how to calculate d and s not just for 1 time-point back but all time-points
   arrange(day, .by_group = TRUE) %>%
-  mutate(d = lead(rel_abund) - rel_abund, 
-         s = lead(rel_abund) + rel_abund, 
+  mutate(d = lead(abs_abund_ng) - abs_abund_ng, 
+         s = lead(abs_abund_ng) + abs_abund_ng, 
          phi = (d^2 - s) / (s^2 - s)) %>%
   ungroup()
   
-ggplot(dissimilarity_rel, aes(x=day, y=phi, color=name)) +
+ggplot(dissimilarity_abs, aes(x=day, y=phi, color=name)) +
   geom_line(show.legend = FALSE) +
   facet_wrap(vars(biota), nrow = 2, scales = 'free_y')
 
@@ -86,6 +80,8 @@ ggplot(dissimilarity_rel, aes(x=day, y=phi, color=name)) +
   
 
   
+
+
 # Import metadata
 metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   mutate(date=dmy(date))
