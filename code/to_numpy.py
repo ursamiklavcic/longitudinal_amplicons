@@ -1,4 +1,3 @@
-#conda activate learn-python
 
 import pandas as pd
 impoert numpy as np
