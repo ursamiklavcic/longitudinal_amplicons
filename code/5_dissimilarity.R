@@ -51,7 +51,6 @@ otutab_meta = otutabEM %>%
 # Function to calculate dissimilarity for an OTU from 1 host across all time-points
 calculate_dissimilarity = function(tab, T){
   diss_all <- c()
-  #diss_mean <- data.frame()
   diss_mean <- c()
  
   for (t in 1:(length(tab) - T)) {
@@ -64,8 +63,7 @@ calculate_dissimilarity = function(tab, T){
     
   }
   diss_mean <- c(mean(diss_all, na.rm= TRUE))
-  #diss_mean <- data.frame(mean_diss = mean(diss_all), 
-  #                       time_lag = T)
+  
   return(diss_mean)
 }
 
@@ -100,11 +98,20 @@ for ( b in unique(otutab_meta$biota)) {
 
 results
 
+# Plots
+# Plot mean dissimilarity in ethanol resistant fraction vs microbiota 
 ggplot(results, aes(x = time_lag, y = mean_diss, color = biota)) +
   geom_line() +
   facet_wrap(vars(person))
 
+# what about different people? 
 
+# What about OTUs that are sporeforming and active, so were found in microbiota also? 
+
+
+
+
+# Dissimilarity between OTUs in the same community
 
 calculate_dissimilarity_between_communities <- function(afd_temporal_1, afd_temporal_2, T) {
   diss_all <- c()
