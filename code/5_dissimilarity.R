@@ -283,7 +283,29 @@ dissimilaritySM %>%
   facet_grid(person~time_lag_rm, scales= 'free_y') +
   labs(x = 'T(days', y = 'Dissimilarity(T) / mean dissimilarity', title = 'Sporobiota')
 
-# Identifying OTUs with a plateau in intraindividual dissimilarity 
+# Mean diis at time_lag microbiota vs sporobiota
+dissimilaritySM %>%
+  group_by(biota, person, time_lag) %>%
+  reframe(diss_inf = mean(mean_diss, na.rm = TRUE), 
+          sd_diss_inf = sd(mean_diss, na.rm = TRUE)) %>%
+  ungroup() %>%
+  ggplot(aes(x = time_lag, y = diss_inf, color = biota)) +
+  geom_line() +
+  facet_grid(~person, scales = 'free_y') +
+  scale_color_manual(values = colsm) +
+  labs(x = 'T(days)', y = 'Mean dissimilarity for a person and time lag', color = '')
+
+# Mean of diss(T)/mean_diss(person) over time_lag 
+dissimilaritySM %>% 
+  left_join(results, by = c('biota', 'person'), relationship = 'many-to-many') %>%
+  group_by(biota, person, time_lag) %>%
+  summarise(mean_diss_meanDIVdiss_inf = mean((mean_diss/diss_inf), na.rm = TRUE)) %>%
+  ggplot(aes(x = (time_lag), y = mean_diss_meanDIVdiss_inf, color = biota)) +
+  geom_line() +
+  facet_grid(~person, scales = 'free_y') +
+  scale_color_manual(values = colsm) +
+  labs(x = 'T(days)', y = 'Mean rescaled dissimilarity for a person and time lag', color = '')
+
 
 
 
