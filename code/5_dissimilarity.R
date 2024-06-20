@@ -198,7 +198,7 @@ for (b in unique(otutabSM_meta$biota)) {
   for (p in unique(otutabSM_meta$person)) {
     for (o in colnames(otutabSM_present)) {
       
-      tab <- otutab_meta %>%
+      tab <- otutabSM_meta %>%
         filter(biota == b & person == p) %>%
         arrange(day) %>%
         pull(o)
@@ -265,36 +265,78 @@ for(i in time_lags) {
   results = rbind(results, result)
 }
 
-dissimilaritySM %>% 
-  left_join(results, by = c('biota', 'person'), relationship = 'many-to-many') %>%
-  filter(biota == 'Microbiota') %>%
-  mutate(diss_meanDIVdiss_inf = mean_diss/diss_inf) %>%
-  ggplot(aes(x = time_lag, y = diss_meanDIVdiss_inf, color = name)) +
-  geom_point(show.legend = FALSE) +
-  facet_grid(person~time_lag_rm, scales= 'free_y') +
-  labs(x = 'T(days', y = 'Dissimilarity(T) / mean dissimilarity', title = 'Microbiota')
-# Same plot for sporobiota 
-dissimilaritySM %>% 
-  left_join(results, by = c('biota', 'person'), relationship = 'many-to-many') %>%
+# Combine results 
+diss_all = dissimilaritySM %>% 
+  left_join(results, by = c('biota', 'person'), relationship = 'many-to-many')
+
+# How many OTUs do I have for each persons sporobiota 
+no_spore_otus = dissimilaritySM %>%
   filter(biota == 'Sporobiota') %>%
-  mutate(diss_meanDIVdiss_inf = mean_diss/diss_inf) %>%
-  ggplot(aes(x = time_lag, y = diss_meanDIVdiss_inf, color = name)) +
-  geom_point(show.legend = FALSE) +
-  facet_grid(person~time_lag_rm, scales= 'free_y') +
-  labs(x = 'T(days', y = 'Dissimilarity(T) / mean dissimilarity', title = 'Sporobiota')
+  group_by(person) %>%
+  summarize(n_distinct(name))
 
-# Mean diis at time_lag microbiota vs sporobiota
-dissimilaritySM %>%
+# Subsampling microbiota OTUs at random, to check if the effect is because of sampling error or true effect 
+bootstrap_means <- function(df, n_bootstraps = 1, seed = 96) {
+  set.seed(seed)
+  
+  # Separate the data based on biota
+  sporobiota_data <- diss_all %>% filter(biota == "Sporobiota")
+  microbiota_data <- diss_all %>% filter(biota == "Microbiota")
+  
+  # Get the number of OTUs per person in sporobiota 
+  otu_counts <- sporobiota_data %>%
+    group_by(person) %>%
+    summarise(otu_count = n_distinct(name), .groups = 'drop')
+  
+  # Initialize a list to store the bootstrap samples
+  bootstrap_samples <- list()
+  
+  for (i in 1:n_bootstraps) {
+    # Randomly sample from the microbiota group to match the OTU counts in sporobiota group
+    microbiota_sampled <- microbiota_data %>%
+      group_by(person) %>%
+      sample_n(size = otu_counts$otu_count[match(person, otu_counts$person)], replace = TRUE, .groups = 'drop') %>%
+      ungroup()
+    # Combine the data frames
+    combined_data <- bind_rows(sporobiota_data, microbiota_sampled)
+    # Calculate the mean values
+    mean_values <- combined_data %>%
+      group_by(biota, person, time_lag, time_lag_rm) %>%
+      summarise(mean_ratio = mean(mean_diss / diss_inf, na.rm = TRUE), .groups = 'drop')
+    # Store the mean values in the list
+    bootstrap_samples[[i]] <- mean_values
+  }
+  
+  # Combine all bootstrap samples into one data frame
+  bootstrap_df <- bind_rows(bootstrap_samples, .id = "bootstrap")
+  
+  # Calculate the overall mean values
+  overall_mean <- bootstrap_df %>%
+    group_by(biota, person, time_lag, time_lag_rm) %>%
+    summarise(mean_ratio = mean(mean_ratio, na.rm = TRUE), .groups = 'drop')
+  
+  return(overall_mean)
+}
+
+bootstrap_results <- bootstrap_means(diss_all, n_bootstraps = 100, seed = 96) %>%
+  mutate(biota = 'subsampled Microbiota')
+
+empirical_results = diss_all %>% group_by(biota, person, time_lag, time_lag_rm) %>%
+  reframe(mean_ratio = mean_diss/diss_inf)
+
+bootstrap_results %>% rbind(empirical_results) %>%
+  filter(time_lag_rm == 56) %>%
   group_by(biota, person, time_lag) %>%
-  reframe(diss_inf = mean(mean_diss, na.rm = TRUE), 
-          sd_diss_inf = sd(mean_diss, na.rm = TRUE)) %>%
-  ungroup() %>%
-  ggplot(aes(x = time_lag, y = diss_inf, color = biota)) +
+  summarise(mean_mean_ratio = mean(mean_ratio)) %>%
+  ggplot(aes(x = time_lag, y = mean_mean_ratio, color = biota)) +
   geom_line() +
+  scale_y_continuous(breaks = c(0,2)) +
   facet_grid(~person, scales = 'free_y') +
-  scale_color_manual(values = colsm) +
-  labs(x = 'T(days)', y = 'Mean dissimilarity for a person and time lag', color = '')
+  labs(x = 'T(days)', y = 'Dissimilarity(T) / mean dissimilarity', color = '')
 
+# Bootstraping on 
+
+# Previous plot
 # Mean of diss(T)/mean_diss(person) over time_lag 
 dissimilaritySM %>% 
   left_join(results, by = c('biota', 'person'), relationship = 'many-to-many') %>%
@@ -315,19 +357,3 @@ dissimilaritySM %>%
 
 
 
-
-##  
-# Dissimilarity between OTUs in the same community
-calculate_dissimilarity_between_communities <- function(tab_1, tab_2, T) {
-  diss_all <- c()
-  for (t in 1:(length(tab_1) - T)) {
-    n_1_t <- tab_1[t]
-    n_2_t_plus_T <- tab_2[t + T]
-    d_plus <- n_1_t + n_2_t_plus_T
-    d_minus <- n_1_t - n_2_t_plus_T
-    diss <- ((d_minus^2) - d_plus) / (d_plus * (d_plus - 1))
-    diss_all <- c(diss_all, diss)
-  }
-  mean_diss <- mean(diss_all)
-  return(mean_diss)
-}
