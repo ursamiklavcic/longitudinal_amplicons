@@ -65,7 +65,8 @@ otutabSM_rel %>%
   summarise(mean = mean(value), 
             var = var(value), .groups = 'drop') %>%
   ggplot(aes(x = log10(mean), y = log10(var), color = person, shape = biota)) +
-  geom_point()
+  geom_point(size = 2) +
+  facet_grid(~biota)
 
 # Mean abundance distribution MAD = distribution of mean abundance (over communities) across species
 otutabSM_rel %>%
