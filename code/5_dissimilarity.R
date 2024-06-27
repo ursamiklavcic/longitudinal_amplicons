@@ -30,6 +30,7 @@ otutab_absrel = readRDS('data/r_data/otutab_absabund.RDS')
 otutabEM = readRDS('data/r_data/otutabEM.RDS')
 metadata = readRDS('data/r_data/metadata.RDS')
 taxtab = readRDS('data/r_data/taxonomy.RDS')
+otutabSM = readRDS('data/r_data/otutabSM.RDS')
 
 # Function to calculate dissimilarity for an OTU from 1 host across all time-points
 calculate_dissimilarity = function(tab, T){
@@ -159,8 +160,6 @@ ggplot(dissimilarity, aes(x = biota, y= mean_diss, fill = biota)) +
 ## Sporbiota VS microbiota
 # Always present OTUs from microbiota that can form spores
 # In each host
-otutabSM = readRDS('data/r_data/otutabSM.RDS')
-
 # Always present OTUs 
 present_otusSM = otutabSM %>% 
   as.data.frame() %>%
@@ -461,8 +460,114 @@ for (b in unique(otutabSM_meta$biota)) {
 }
 
 varSM %>%
-  mutate(mean_var = as.numeric(mean_var)) %>%
+  mutate(mean_var = abs(as.numeric(mean_var))) %>%
   ggplot(aes(x = biota, y= mean_var, fill = biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colsm) +
   facet_grid(~ person)
+
+# Other ways to show that dissimilarity holds! 
+# Bray-Curtis 
+bray = vegdist(otutabSM, method = 'bray')
+
+dist_bray = as.matrix(bray) %>% 
+  as_tibble(rownames= 'Group') %>%
+  pivot_longer(-Group) %>%
+  # Remove the distances of the same sample 
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, day, biota), by='Group') %>%
+  left_join(metadata %>% select(Group, person, day, biota), by=join_by('name' == 'Group')) %>%
+  mutate(same = ifelse(biota.x==biota.y, 'Same', 'Different'), 
+         same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
+         diff_day = day.x -day.y) %>%
+  filter(same == 'Same') %>%
+  select(-same, -biota.y, 'biota' = 'biota.x') %>%
+  mutate(biota = ifelse(biota == 'Microbiota', 'Microbiota', 'Sporobiota'))
+
+ggplot(dist_bray, aes(x=same_person, y=value, fill=biota)) +
+  geom_boxplot() +
+  scale_fill_manual(values = colsm) +
+  scale_y_continuous(breaks = c(0,1)) +
+  labs(y='Bray-Curtis distance', x='', fill='')
+
+dist_bray %>%
+  filter(same_person == 'Same individual' & diff_day > 0) %>%
+  ggplot(aes(x = diff_day, y = value, color = biota)) +
+  geom_point() +
+  scale_y_continuous(breaks = c(0, 0.25, 0.5, 0.75,1)) +
+  scale_color_manual(values = colsm) +
+  facet_wrap(vars(person.x), nrow = 3) +
+  labs(x = 'Days between time-points', 
+       y = 'Bray-Curtis distance', 
+       color = '')
+
+# Statistics wilcox.test
+# Between different individuals 
+corr = dist_bray %>%
+  filter(same_person == 'Same individual' & diff_day > 0) %>%
+  group_by(biota, person.x) %>%
+  reframe(pvalue = cor.test(value, diff_day, method = 'pearson')$p.value, 
+          cor = cor.test(value, diff_day, method = 'pearson')$estimate)
+
+# Plot with statistics 
+dist_bray %>%
+  filter(same_person == 'Same individual' & diff_day > 0) %>%
+  ggplot() +
+  geom_point(mapping = aes(x = diff_day, y = value, color = biota)) +
+  scale_color_manual(values = colsm) +
+  geom_text(corr %>% filter(biota == 'Microbiota'), 
+            mapping = aes(x = 190, y = 0.95, label = sprintf('p = %.2g\nr = %.2f', pvalue, cor)), 
+            color = colm, hjust = 1.1, vjust = 1.1, size = 3, check_overlap = TRUE) +
+  geom_text(corr %>% filter(biota == 'Sporobiota'), 
+            mapping = aes(x = 190, y = 0.75, label = sprintf('p = %.2g\nr = %.2f', pvalue, cor)),
+            color = cols, hjust = 1.1, vjust = 1.1, size = 3, check_overlap = TRUE) +
+  scale_y_continuous(breaks = c(0, 0.25, 0.5, 0.75,1)) +
+  facet_wrap(vars(person.x), nrow = 3) +
+  labs(x = 'Days between time-points', 
+       y = 'Bray-Curtis distance', 
+       color = '')
+
+# Jensen-Shannon (alpha diveristy through time)
+# Calculated with relative abundances! 
+# richnessSM = estimateR(otutabEM) # observed richness and Chao1
+# evennessSM = diversity(otutabEM)/log(specnumber(otutabEM)) # evenness index
+shannonSM = diversity(otutabSM, index = 'shannon')
+
+# Join all calculations and metadata
+ alpha_meta = #as_tibble(as.list(evennessEM)) %>% pivot_longer(names_to = 'Group', values_to = 'evenness', cols = starts_with(c('M', 'S'))) %>%
+#   left_join(t(richnessEM) %>% as.data.frame() %>% rownames_to_column('Group'), by='Group') %>%
+  as_tibble(as.list(shannonSM)) %>% 
+   pivot_longer(names_to = 'Group', values_to = 'shannon', 
+                cols = starts_with(c('M', 'S'))) %>%
+  #left_join(PD %>% rownames_to_column('Group'), by = 'Group') %>%
+  left_join(metadata, by='Group') %>%
+  mutate(person2 = person, 
+         biota = ifelse(biota == 'Microbiota', 'Microbiota', 'Sporobiota')) 
+
+# Shannon of samples through time 
+ggplot(alpha_meta, aes(x=day, y=shannon)) +
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Microbiota'), 
+            aes(group=person2), color= colm, linewidth=0.5, alpha=0.5) +
+  geom_line(data=alpha_meta %>% dplyr::select(-person) %>% filter(biota == 'Sporobiota'), 
+            aes(group=person2), color= cols, linewidth=0.5, alpha=0.5)+
+  geom_line(data=alpha_meta %>% filter(biota == 'Microbiota'),
+            aes(color=person), color= colm, linewidth=1.2) +
+  geom_line(data=alpha_meta %>% filter(biota == 'Sporobiota'), 
+            color=cols, linewidth=1.2) +
+  facet_wrap(~person, scales = 'free') +
+  labs(x='Day', y= 'Shannon')
+
+# Shannon correlation 
+corr_shannon = alpha_meta %>% select(original_sample, biota, shannon) %>%
+  pivot_wider(names_from = 'biota', values_from = 'shannon')
+
+corr_shannon %>%
+  ggplot(aes(x=Microbiota, y=Sporobiota)) +
+  geom_point() +
+  annotate('text', x =4.3, y= 2.8, label= paste0('p-value ', round(corrr$p.value, 4))) +
+  annotate('text', x =4.3, y= 2.7, label= paste0('Correlation ', round(corrr$estimate, 3))) +
+  labs(x = 'Shannon values Microbiota', 
+       y= 'Shannon values Sporobiota')
+  
+
+corrr = cor.test(corr_shannon$Microbiota, corr_shannon$Sporobiota, method = 'pearson')
