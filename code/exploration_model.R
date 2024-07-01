@@ -41,6 +41,29 @@ otu_spore_list =
   mutate(biota = ifelse(value.x > 1 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
   filter(biota == 'Sporobiota') %>%
   pull(name)
+
+# top 5 OTUs in microbiota and ethanol resistant fraction but spore-forming 
+top5 = otutab_absrel %>%
+  left_join(select(metadata, Group, biota), by = 'Group') %>%
+  group_by(biota, name) %>%
+  summarise(sum_relabund = sum(rel_abund), .groups = 'drop') %>%
+  group_by(biota) %>%
+  arrange(-sum_relabund, .by_group = TRUE) 
+
+top5_etoh = filter(top5, biota == 'Ethanol resistant fraction')
+top5_etoh = top5_etoh[1:5, ]
+
+top5_micro = filter(top5, biota == 'Microbiota')
+top10_micro = top5_micro[1:10, ]
+top5_micro = top5_micro[1:5, ]
+
+top5_both = otutab_absrel %>%
+  left_join(select(metadata, Group, biota), by = 'Group') %>%
+  group_by(name) %>%
+  summarise(sum_relabund = sum(rel_abund), .groups = 'drop') %>%
+  arrange(-sum_relabund, .by_group = TRUE) 
+
+top5_both = top5[1:5, ]
 # Unranked density plot 
 
 otutab_sub <- filter(as.data.frame(otutabEM), substr(rownames(otutabEM), 1, 1) == 'S')
@@ -257,36 +280,60 @@ otutabR %>%
        y = 'Relative abundance ') +
   facet_wrap(~person)
 
-# Plot top 5 OTUs
+# Plot top 5 OTUs in microbiota
 otutabR %>% 
   # right_join(corr_otus, by = c('person', 'name')) %>%
-  filter(name %in% c('Otu000001', 'Otu000002', 'Otu000003', 'Otu000004', 'Otu000006')) %>%
+  filter(name %in% top5_micro$name) %>%
   ggplot(aes(x = rescaled, y = value)) +
   geom_point() +
-  facet_grid(name~person)
+  facet_grid(name~person, scales = 'free')
+
+# Plot top5 OTUs in ethanol resistant fraction
+otutabR %>% 
+  # right_join(corr_otus, by = c('person', 'name')) %>%
+  filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = rescaled, y = value)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free')
+
+# Top 5 in all samples together
+otutabR %>% 
+  filter(name %in% top5_both$name) %>%
+  ggplot(aes(x = rescaled, y = value)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free')
 
 set.seed(96)
 corr_otus = otutabR %>%
+  filter(!is.na(name)) %>%
   group_by(person, name) %>%
   reframe(pvalue = cor.test(rescaled, value, method = 'pearson')$p.value,
           estimate = cor.test(rescaled, value, method = 'pearson')$estimate) %>%
-  filter(pvalue < 0.005) %>%
   arrange(name)
 
 write.csv(corr_otus, 'out/exploration/corr_otus_rescaled.csv')
-  
+
+# Are spore-forming OTUs correlated or not always? 
+# This has to be observed in each individual
+otutab_corr = otutabR %>% left_join(corr_otus, by = c('name', 'person')) %>%
+  mutate(not_corr = ifelse(is.na(pvalue), '', '***'), 
+         more_than = ifelse(pvalue < 0.0005, 'Significant', 'Not significant'),
+         sporeforming = ifelse(name %in% otu_spore_list, 'Spore-forming', 'Non-spore-forming'))
+
+otutab_corr %>%
+  filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = rescaled, y = value, color = sporeforming)) +
+  geom_point() +
+  geom_text(x = 0.1, y = 0.1, aes(label = not_corr, color = more_than)) +
+  facet_grid(name~person, scales = 'free')
+
+
+
 # Plotting correlated OTUs
 otutabR %>% left_join(corr_otus, by = c('person', 'name')) %>%
   ggplot(aes(x = rescaled, y= value, color = estimate,)) +
   geom_point( size = 1) +
   facet_wrap(~person, nrow=3)
-
-otutabR %>% left_join(corr_otus, by = 'name') %>%
-  mutate(not_corr = ifelse(is.na(pvalue), 'Not correalted', 'Correlated'), 
-         more_than = ifelse(pvalue < 0.0005, 'Significant', 'Not significant')) %>%
-  ggplot(aes(x = rescaled, y= value, color = estimate,)) +
-  geom_point( size = 1) +
-  facet_grid(more_than~not_corr)
 
 # What about taxonomy 
 otutabR %>% left_join(corr_otus, by = c('person', 'name')) %>%
@@ -329,7 +376,7 @@ otutabR3 %>%
 # Plot top 5 OTUs
 otutabR3 %>% 
   # right_join(corr_otus, by = c('person', 'name')) %>%
-  filter(name %in% c('Otu000001', 'Otu000002', 'Otu000003', 'Otu000004', 'Otu000006')) %>%
+  filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = rel_abund.x, y = rel_abund.y)) +
   geom_point() +
   facet_grid(name~person, scales = 'free')
@@ -342,6 +389,71 @@ corr_otus = otutabR3 %>%
   filter(pvalue < 0.005) %>%
   arrange(name)
 
+# Rescaling the microbiota OTUs by the avergae relabunda in each sample OR in each OTU
+# First rescaling by avergae relative abundance in each sample
+avg_rel_sample = rowMeans(otutabMp) %>%
+  as.data.frame() %>%
+  rownames_to_column('Group')
+
+otutabR4 = otutabMp %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  left_join(avg_rel_sample, by = 'Group') %>%
+  mutate(rescaled = value/.) %>%
+  select(Group, name, rescaled) %>%
+  left_join(select(metadata, Group, original_sample, biota), by ='Group') %>%
+  right_join(filter(otutab_absrel, name %in% otu_spore_list) %>%
+               left_join(metadata, by ='Group') %>%
+               filter(biota == 'Ethanol resistant fraction'),  
+             by = join_by('name', 'original_sample'))
+
+
+# 
+otutabR4 %>%
+  filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = rescaled, y = rel_abund)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x= 'rescaled xi by xa', y= 'Relative abundance yia')
+
+otutabR4 %>%
+  filter(name %in% top10_micro$name) %>%
+  ggplot(aes(x = rescaled, y = rel_abund)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x= 'rescaled xi by xa', y= 'Relative abundance yia')
+
+# Rescaled by avergae relative abudnance of that OTU acroess all samples 
+avg_rel_otu = colMeans(otutabMp) %>%
+  as.data.frame() %>%
+  rownames_to_column('name')
+
+otutabR5 = otutabMp %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  left_join(avg_rel_otu, by = 'name') %>%
+  mutate(rescaled = value/.) %>%
+  select(Group, name, rescaled) %>%
+  left_join(select(metadata, Group, original_sample, biota), by ='Group') %>%
+  right_join(filter(otutab_absrel, name %in% otu_spore_list) %>%
+               left_join(metadata, by ='Group') %>%
+               filter(biota == 'Ethanol resistant fraction'),  
+             by = join_by('name', 'original_sample'))
+
+otutabR5 %>%
+  filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = rescaled, y = rel_abund)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x= 'rescaled xi by avergae xi', y= 'Relative abundance yia')
+
+
+otutabR5 %>%
+  filter(name %in% top10_micro$name) %>%
+  ggplot(aes(x = rescaled, y = rel_abund)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x= 'rescaled xi by avergae xi', y= 'Relative abundance yia')
 ###
 # Average sporobiota vs average microbiota rescaled rel abundance correlation?
 otutabR %>%
@@ -360,6 +472,7 @@ otutabR %>%
   ggplot(aes(x = log10(mean_xi), y = log10(mean_yi))) +
   geom_point() +
   facet_wrap(~person)
+
 
 
 # 3 
@@ -421,14 +534,17 @@ mean_abs %>%
   labs(x = 'mean Xi', y= 'mean Yi') +
   facet_grid(name~person)
 
-
-
 # How many OTUs represent like 95% of everthing in EtOH samples 
+cumsum_otus = otutab_absrel %>%
+  left_join(select(metadata, Group, biota, person), by = 'Group') %>%
+  group_by(biota, person) %>%
+  reframe(rel_abund = value/sum(value)) %>%
+  group_by(biota, person) %>%
+  arrange(desc(rel_abund), .by_group = TRUE) %>%
+  mutate(cum = cumsum(rel_abund), 
+         percent = cum/sum(cum))
 
-# Plot top 5/10 Otus for each person value vs rescaled
 
-# plot the same but not rescaled, 
-# rescaled by the whole ethnol resistant fraction
-# rescaled by absolute avlue of sample ethOh
+
 
   
