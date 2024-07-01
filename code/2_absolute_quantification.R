@@ -50,7 +50,7 @@ ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_re
   left_join(samples_info, by =join_by('Sample'=='Group')) %>%
   filter(AcceptedDroplets > 10000) %>%
   # Calculate the copy number of 16s rRNA gene per ng of DNA
-  mutate(CopiesPerngDNA = ((Concentration * 25 * dilution_ddPCR )/(5))*DNAconc)
+  mutate( copies_ng = (CopiesPer20uLWell*0.5*dilution_ddPCR)/DNAconc_seq)
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 # Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
@@ -58,13 +58,13 @@ saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 otutabEM = readRDS('data/r_data/otutabEM.RDS')
 
-otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
-  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   pivot_longer(cols = starts_with('Otu')) %>%
   group_by(Group) %>%
   mutate(rel_abund = value/sum(value)) %>%
   ungroup() %>%
-  mutate(abs_abund_ng = rel_abund*CopiesPerngDNA) %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate(abs_abund_ng = rel_abund*copies_ng) %>%
   filter(!is.na(Well)) %>%
   select(Group, name, value, rel_abund, abs_abund_ng)
 
