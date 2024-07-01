@@ -215,30 +215,30 @@ otutab_rel = select(otutab_absrel, Group, name, rel_abund) %>%
   pivot_wider(values_from = 'rel_abund', names_from = 'name') %>%
   column_to_rownames('Group')
 # Function to rescale abundance of OTU i in sample a, by the abundance of spore-forming OTUs
-otutabMp = filter(as.data.frame(otutab_rel), substr(rownames(otutab_rel), 1, 1) == 'M')
-otutabS = otutabMp[, colnames(otutabMp) %in% otu_spore_list]
+otutabSp = filter(as.data.frame(otutab_rel), substr(rownames(otutab_rel), 1, 1) == 'S')
+otutabS = otutabSp[, colnames(otutabSp) %in% otu_spore_list]
 
 xj = rowSums(otutabS) %>%
   as.data.frame() %>%
   rownames_to_column('Group') %>%
-  setNames(c('Group', 'xj'))
+  left_join(select(metadata, Group, original_sample), by ='Group') %>%
+  setNames(c('Group', 'xj', 'original_sample'))
 
-otutabSp = filter(as.data.frame(otutab_rel), substr(rownames(otutab_rel), 1, 1) == 'S')
-otutabSs = otutabSp[, colnames(otutabSp) %in% otu_spore_list]
+otutabMp = filter(as.data.frame(otutab_rel), substr(rownames(otutab_rel), 1, 1) == 'M')
 
 otutabR = otutabMp %>%
   as.data.frame() %>%
   rownames_to_column('Group') %>%
   pivot_longer(-Group) %>%
-  left_join(xj, by = 'Group') %>%
-  mutate(rescaled = value / xj) %>%
-  select(Group, name, rescaled) %>%
   left_join(select(metadata, Group, original_sample), by ='Group') %>%
-  right_join(otutabSs %>% 
+  right_join(xj, by = 'original_sample') %>%
+  mutate(rescaled = value / xj) %>%
+  select(-value, -xj) %>%
+  left_join(otutabSp %>% 
                rownames_to_column('Group') %>%
                pivot_longer(-Group) %>%
                left_join(metadata, by ='Group'), 
-             by = c('name', 'original_sample'))
+             by = join_by('name', 'original_sample', 'Group.y' == 'Group'))
 
 # By person 
 ggplot(otutabR, aes(x = rescaled, y = value, color =person)) +
@@ -257,15 +257,6 @@ otutabR %>%
        y = 'Relative abundance ') +
   facet_wrap(~person)
 
-set.seed(96)
-corr_otus = otutabR %>%
-  group_by(person, name) %>%
-  reframe(pvalue = cor.test(rescaled, value, method = 'pearson')$p.value, 
-          estimate = cor.test(rescaled, value, method = 'pearson')$estimate) %>%
-  filter(pvalue < 0.005) %>%
-  arrange(name)
-
-write.csv(corr_otus, 'out/exploration/corr_otus_rescaled.csv')
 # Plot top 5 OTUs
 otutabR %>% 
   # right_join(corr_otus, by = c('person', 'name')) %>%
@@ -273,9 +264,19 @@ otutabR %>%
   ggplot(aes(x = rescaled, y = value)) +
   geom_point() +
   facet_grid(name~person)
+
+set.seed(96)
+corr_otus = otutabR %>%
+  group_by(person, name) %>%
+  reframe(pvalue = cor.test(rescaled, value, method = 'pearson')$p.value,
+          estimate = cor.test(rescaled, value, method = 'pearson')$estimate) %>%
+  filter(pvalue < 0.005) %>%
+  arrange(name)
+
+write.csv(corr_otus, 'out/exploration/corr_otus_rescaled.csv')
   
 # Plotting correlated OTUs
-otutabR %>% left_join(corr_otus, by = 'name') %>%
+otutabR %>% left_join(corr_otus, by = c('person', 'name')) %>%
   ggplot(aes(x = rescaled, y= value, color = estimate,)) +
   geom_point( size = 1) +
   facet_wrap(~person, nrow=3)
@@ -288,31 +289,60 @@ otutabR %>% left_join(corr_otus, by = 'name') %>%
   facet_grid(more_than~not_corr)
 
 # What about taxonomy 
-otutabR %>% left_join(corr_otus, by = 'name') %>%
+otutabR %>% left_join(corr_otus, by = c('person', 'name')) %>%
   mutate(not_corr = ifelse(is.na(pvalue), 'Not correalted', 'Correlated'), 
          more_than = ifelse(pvalue < 0.0005, 'Significant', 'Not significant')) %>%
   filter(more_than == 'Significant' & not_corr == 'Correlated') %>%
   left_join(taxtab, by = 'name') %>%
-  group_by(person, day, Class) %>%
-  summarise(sum_rescaled = sum(rescaled)) %>%
-  ggplot(aes(x = day, y = sum_rescaled, color = Class)) +
-  geom_line() +
-  scale_y_log10() +
+  ggplot(aes(x = person, y = rescaled, fill = Class)) +
+  geom_bar(stat = 'identity')
+
+# Rsacling option number 2, all OTUs from EtOh = does not make sense as sum of all OTUs will always be 1 or the normalization number
+# NO rescaling 
+
+otutabR3 = otutab_absrel %>%
+  left_join(select(metadata, Group, original_sample, biota), by ='Group') %>%
+  filter(biota == 'Microbiota') %>%
+  # filter so that we have only spore-fomring OTUs
+  right_join(filter(otutab_absrel, name %in% otu_spore_list) %>%
+               left_join(metadata, by ='Group') %>%
+               filter(biota == 'Ethanol resistant fraction'),  
+             by = join_by('name', 'original_sample'))
+
+# By person 
+ggplot(otutabR3, aes(x = rel_abund.x, y = rel_abund.y, color =person)) +
+  geom_point()+
+  facet_wrap(~person, nrow = 3) +
+  labs(x = 'Rescaled relative abundance OTU in microbiota samples', 
+       y = 'Relative abundance in ethnol resistant fraction samples', 
+       color = 'Individual')
+
+# For OTU1
+otutabR3 %>%
+  filter(name == 'Otu000001') %>%
+  ggplot(aes(x = rel_abund.x, y = rel_abund.y, color = person)) +
+  geom_point(size=3) +
+  labs(x = 'Rescaled relative abundance', 
+       y = 'Relative abundance ') +
   facet_wrap(~person)
 
-# Are come OTUs from taxonomic groups more/less correlated ?
-otutabR %>%
-  left_join(corr_otus, by = 'name') %>%
-  mutate(not_corr = ifelse(is.na(pvalue), 'Not correalted', 'Correlated'), 
-         more_than = ifelse(pvalue < 0.0005, 'Significant', 'Not significant')) %>%
-  filter(more_than == 'Significant' & not_corr == 'Correlated') %>%
-  left_join(taxtab, by = 'name') %>%
-  ggplot(aes(x =rescaled, y = value, color = Class)) +
+# Plot top 5 OTUs
+otutabR3 %>% 
+  # right_join(corr_otus, by = c('person', 'name')) %>%
+  filter(name %in% c('Otu000001', 'Otu000002', 'Otu000003', 'Otu000004', 'Otu000006')) %>%
+  ggplot(aes(x = rel_abund.x, y = rel_abund.y)) +
   geom_point() +
-  facet_wrap(~Class)
+  facet_grid(name~person, scales = 'free')
 
+set.seed(96)
+corr_otus = otutabR3 %>%
+  group_by(person, name) %>%
+  reframe(pvalue = cor.test(rel_abund.x, rel_abund.y, method = 'pearson')$p.value,
+          estimate = cor.test(rel_abund.x, rel_abund.y, method = 'pearson')$estimate) %>%
+  filter(pvalue < 0.005) %>%
+  arrange(name)
 
-
+###
 # Average sporobiota vs average microbiota rescaled rel abundance correlation?
 otutabR %>%
   group_by(name) %>%
