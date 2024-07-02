@@ -489,8 +489,7 @@ otutab_absrel %>%
   facet_wrap(~person, nrow=3, scales = 'free')
 
 # OTU table with absolute abundances
-otutabAs = select(otutab_absrel, Group, name, abs_abund_ng) %>%
-  filter(substr(Group, 1, 1) == 'S') %>%
+otutabAs = filter(otutab_absrel, substr(Group, 1, 1) == 'S') %>%
   left_join(select(metadata, Group, original_sample), by ='Group') 
 
 otutabA = select(otutab_absrel, Group, name, abs_abund_ng) %>%
@@ -555,10 +554,11 @@ cum_otus %>% filter(biota == 'Ethanol resistant fraction' & Cumulative_Percentag
 # How about this calculatons by person!
 cum_otus_person = otutab_absrel %>%
   left_join(select(metadata, Group, biota, person), by = 'Group') %>%
+  mutate(PA = ifelse(value > 0, 1, 0)) %>%
   group_by(biota, person, name) %>%
-  summarise(Total_Abundance = sum(value, na.rm = TRUE), .groups = 'drop') %>%
-  arrange(name, desc(Total_Abundance)) %>%
+  summarise(Total_Abundance = sum(value), .groups = 'drop') %>%
   group_by(biota, person) %>%
+  arrange(name, desc(Total_Abundance), .by_group = TRUE) %>%
   mutate(Cumulative_Abundance = cumsum(Total_Abundance),
          Total_Group_Abundance = sum(Total_Abundance),
          Cumulative_Percentage = (Cumulative_Abundance / Total_Group_Abundance) * 100)
@@ -575,18 +575,76 @@ otutabA = select(otutab_absrel, Group, name, abs_abund_ng) %>%
   filter(substr(Group, 1, 1) == 'M') %>%
   left_join(select(metadata, Group, original_sample, biota, person, day), by ='Group') %>%
   left_join(otutabAs, by = c('original_sample', 'name')) %>%
-  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, miDIVni = mi/ni, 
-         sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming')) %>%
-  filter(mi > 0 & ni > 0)
+  filter(abs_abund_ng.x > 0 & abs_abund_ng.y > 0) %>%
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, miDIVni = mi/ni,
+         sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming')) 
 
 otutabA %>% filter(name %in% top5_etoh$name) %>%
-  ggplot(aes(x = ni, y = miDIVni)) +
+  ggplot(aes(x = ni, y = mi/ni)) +
   geom_point() +
+  geom_hline(yintercept = 1) +
+  #geom_abline() +
+  scale_y_log10() +
+  scale_x_log10()+
   facet_grid(name~person, scales = 'free')
 
-otutabA %>% filter(name %in% top5_micro$name) %>%
-  ggplot(aes(x = ni, y = miDIVni)) +
+# How are this values correlated in different OTUs 
+otutabA_corr = select(otutab_absrel, Group, name, abs_abund_ng) %>%
+  filter(substr(Group, 1, 1) == 'M') %>%
+  left_join(select(metadata, Group, original_sample, biota, person, day), by ='Group') %>%
+  left_join(otutabAs, by = c('original_sample', 'name')) %>%
+  filter(name %in% otu_spore_list) %>%
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, miDIVni = mi/ni) %>%
+  filter(abs_abund_ng.x > 0 & abs_abund_ng.y > 0 & miDIVni > 0)
+  
+results = data.frame()
+
+for (n in unique(otutabA_corr$name)) {
+  otu_sub = otutabA_corr %>% 
+    filter(name == n)
+  
+  if (nrow(otu_sub) > 1 && all(is.finite(otu_sub$ni)) && all(is.finite(otu_sub$miDIVni))) {
+    tryCatch({
+      corr_res = cor.test(otu_sub$ni, otu_sub$miDIVni, method = 'pearson')
+      results = rbind(results, data.frame(pvalue = corr_res$p.value, 
+                                          estimate = corr_res$estimate, 
+                                          name = n,
+                                          status = "Fine"))
+    }, error = function(e) {
+      results = rbind(results, data.frame(pvalue = NA, 
+                                          estimate = NA, 
+                                          name = n,
+                                          status = paste("Error:", e$message)))
+    })
+  } else {
+    status_message <- "Not enough valid observations"
+    if (!all(is.finite(otu_sub$ni)) || !all(is.finite(otu_sub$miDIVni))) {
+      status_message <- "Contains non-finite values"
+    }
+    results = rbind(results, data.frame(pvalue = NA, 
+                                        estimate = NA, 
+                                        name = n,
+                                        status = status_message))
+  }
+}
+
+otu_corr = results %>%
+  left_join(otutabA_corr, by ='name') %>%
+  filter(!is.na(estimate))
+
+otu_corr %>%
+  ggplot(aes(x = estimate, y = pvalue, color = log10(rel_abund))) +
   geom_point() +
+  scale_y_continuous(breaks = 0.05)
+
+
+otutabA %>% filter(name %in% top5_micro$name) %>%
+  ggplot(aes(x = ni, y = mi)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10()+
+  #geom_hline(yintercept = 1) +
+  geom_abline() +
   facet_grid(name~person, scales = 'free')
 
 # What is the difference between spore-forming and non spore-fomring ? 
@@ -595,26 +653,62 @@ otutabA %>%
   geom_point()+
   facet_grid(sporeforming ~ person, scales = 'free')
 
-# Plot distribution of mi and ni 
-otutabA %>%
-  #filter(name %in% top5_etoh$name) %>%
-  ggplot(aes(x = miDIVni)) + 
-  geom_density() +
-  coord_cartesian(xlim = c(0,5))
+######
+# 2.7.2024
+#####
+ddPCR = readRDS('data/r_data/ddPCR.RDS')
+
+relabs_conc = otutab_absrel %>% left_join(ddPCR, by = join_by('Group' =='Sample')) %>%
+  left_join(metadata, by = 'Group')
+
+relabs_conc %>%
+  filter(name == 'Otu000001') %>%
+  ggplot(aes(x = copies_ng, y = rel_abund)) +
+  geom_point() +
+  facet_wrap(~biota, scales = 'free')
+
+relabs_conc %>%
+  filter(name == 'Otu000001') %>%
+  ggplot(aes(x = DNAconc, y = rel_abund)) +
+  geom_point() +
+  facet_wrap(~biota, scales = 'free')
+
+# Absolute abundnce mi/ni
+otutabA = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
+  left_join(select(metadata, Group, original_sample, biota, person, day), by ='Group') %>%
+  left_join(otutabAs, by = c('original_sample', 'name')) %>%
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y,
+         sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming'))
+
+# Variability of mi/ni across hosts 
+otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+  mutate(miDIVni = mi/ni) %>%
+  group_by(person, day, sporeforming, name) %>%
+  summarise(mean = mean(miDIVni),
+            sd = sd(miDIVni), 
+            .groups = 'drop') %>%
+  ggplot(aes(x = as.factor(day), y = mean, group = name, color= name)) +
+  geom_line(show.legend = FALSE) +
+  scale_y_log10()+
+  facet_grid(sporeforming~person, scales = 'free') +
+  labs(x = 'Day', y = 'Averange mi/ni per OTU')
 
 # 
-otutab_absrel %>%
-  left_join(metadata, by = 'Group') %>%
-  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming')) %>%
-  ggplot(aes(x = abs_abund_ng, fill = sporeforming)) +
-  geom_histogram() +
-  scale_x_log10() +
-  facet_wrap(~ biota, scales = 'free') +
-  labs(x = 'Absolute abudnance', y = 'Number of reads', 
-       fill = 'Are they spore-forming ?')
+otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+  mutate(miDIVni = mi/ni) %>%
+  group_by(person, name) %>%
+  summarise(mean_miDIVni = mean(miDIVni)) %>%
+  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporeforming')) %>%
+  ggplot(aes(x = name, y = mean_miDIVni)) +
+  geom_point() +
+  scale_y_log10() +
+  facet_grid(sporeforming ~ person, scales = 'free')
 
+ # How to depict variation of mi/ni across different OTUs ? 
 
-  
+otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+  mutate(miDIVni = mi/ni) %>%
+  group_by(name) %>%
   
 
   
