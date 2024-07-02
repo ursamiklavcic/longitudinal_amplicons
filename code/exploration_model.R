@@ -487,6 +487,7 @@ otutab_absrel %>%
   geom_line() +
   scale_y_log10() +
   facet_wrap(~person, nrow=3, scales = 'free')
+
 # OTU table with absolute abundances
 otutabAs = select(otutab_absrel, Group, name, abs_abund_ng) %>%
   filter(substr(Group, 1, 1) == 'S') %>%
@@ -535,16 +536,85 @@ mean_abs %>%
   facet_grid(name~person)
 
 # How many OTUs represent like 95% of everthing in EtOH samples 
-cumsum_otus = otutab_absrel %>%
+cum_otus = otutab_absrel %>%
   left_join(select(metadata, Group, biota, person), by = 'Group') %>%
+  group_by(biota, name) %>%
+  summarise(Total_Abundance = sum(value, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(name, desc(Total_Abundance)) %>%
+  group_by(biota) %>%
+  mutate(Cumulative_Abundance = cumsum(Total_Abundance),
+         Total_Group_Abundance = sum(Total_Abundance),
+         Cumulative_Percentage = (Cumulative_Abundance / Total_Group_Abundance) * 100)
+
+cum_otus %>% filter(biota == 'Microbiota' & Cumulative_Percentage < 90)
+# 111 OTUs represent 90% of microbiota 
+
+cum_otus %>% filter(biota == 'Ethanol resistant fraction' & Cumulative_Percentage <90)
+# in the ethanol resistant fraction this is only 20 OTUs! 
+
+# How about this calculatons by person!
+cum_otus_person = otutab_absrel %>%
+  left_join(select(metadata, Group, biota, person), by = 'Group') %>%
+  group_by(biota, person, name) %>%
+  summarise(Total_Abundance = sum(value, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(name, desc(Total_Abundance)) %>%
   group_by(biota, person) %>%
-  reframe(rel_abund = value/sum(value)) %>%
-  group_by(biota, person) %>%
-  arrange(desc(rel_abund), .by_group = TRUE) %>%
-  mutate(cum = cumsum(rel_abund), 
-         percent = cum/sum(cum))
+  mutate(Cumulative_Abundance = cumsum(Total_Abundance),
+         Total_Group_Abundance = sum(Total_Abundance),
+         Cumulative_Percentage = (Cumulative_Abundance / Total_Group_Abundance) * 100)
+
+cum_otus_person %>% filter(Cumulative_Percentage < 95) %>%
+  summarise(n = n_distinct(name)) %>%
+  ggplot(aes(x =person, y = n, fill = biota)) +
+  geom_bar(stat = 'identity') +
+  facet_grid(~biota)
+  
+
+# Compare absolute abundances 
+otutabA = select(otutab_absrel, Group, name, abs_abund_ng) %>%
+  filter(substr(Group, 1, 1) == 'M') %>%
+  left_join(select(metadata, Group, original_sample, biota, person, day), by ='Group') %>%
+  left_join(otutabAs, by = c('original_sample', 'name')) %>%
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, miDIVni = mi/ni, 
+         sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming')) %>%
+  filter(mi > 0 & ni > 0)
+
+otutabA %>% filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = ni, y = miDIVni)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free')
+
+otutabA %>% filter(name %in% top5_micro$name) %>%
+  ggplot(aes(x = ni, y = miDIVni)) +
+  geom_point() +
+  facet_grid(name~person, scales = 'free')
+
+# What is the difference between spore-forming and non spore-fomring ? 
+otutabA %>%
+  ggplot(aes(x = ni, y = miDIVni, color =sporeforming)) +
+  geom_point()+
+  facet_grid(sporeforming ~ person, scales = 'free')
+
+# Plot distribution of mi and ni 
+otutabA %>%
+  #filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = miDIVni)) + 
+  geom_density() +
+  coord_cartesian(xlim = c(0,5))
+
+# 
+otutab_absrel %>%
+  left_join(metadata, by = 'Group') %>%
+  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming')) %>%
+  ggplot(aes(x = abs_abund_ng, fill = sporeforming)) +
+  geom_histogram() +
+  scale_x_log10() +
+  facet_wrap(~ biota, scales = 'free') +
+  labs(x = 'Absolute abudnance', y = 'Number of reads', 
+       fill = 'Are they spore-forming ?')
 
 
-
+  
+  
 
   
