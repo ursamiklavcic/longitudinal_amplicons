@@ -501,6 +501,8 @@ otutabA = select(otutab_absrel, Group, name, abs_abund_ng) %>%
 otutabA %>%
   ggplot(aes(x = abs_abund_ng.x, y = abs_abund_ng.y, color = name))+
   geom_point(show.legend = FALSE) +
+  scale_x_log10() +
+  scale_y_log10() +
   labs( x = 'Xi', y= 'Yi')
 
 # OTUs 1 person 
@@ -530,9 +532,10 @@ mean_abs = mean_otu_abs %>%
 
 mean_abs %>%
   ggplot(aes(x = mean_abs.x, y = mean_abs.y)) +
-  geom_point(show.legend = FALSE) +
-  labs(x = 'mean Xi', y= 'mean Yi') +
-  facet_grid(name~person)
+  geom_point() +
+  scale_y_log10()+
+  scale_x_log10()+
+  labs(x = 'mean Xi', y= 'mean Yi')
 
 # How many OTUs represent like 95% of everthing in EtOH samples 
 cum_otus = otutab_absrel %>%
@@ -598,7 +601,6 @@ otutabA_corr = select(otutab_absrel, Group, name, abs_abund_ng) %>%
   filter(abs_abund_ng.x > 0 & abs_abund_ng.y > 0 & miDIVni > 0)
   
 results = data.frame()
-
 for (n in unique(otutabA_corr$name)) {
   otu_sub = otutabA_corr %>% 
     filter(name == n)
@@ -633,11 +635,17 @@ otu_corr = results %>%
   filter(!is.na(estimate))
 
 otu_corr %>%
-  ggplot(aes(x = estimate, y = pvalue, color = log10(rel_abund))) +
+  ggplot(aes(x = estimate, y = pvalue, color = name)) +
+  geom_point(show.legend = FALSE) +
+  geom_hline(yintercept = 0.05)
+
+# Which OTUs have a positive correlation ? 
+otu_corr %>% 
+  ggplot(aes(x = value, y = mi/ni)) +
   geom_point() +
-  scale_y_continuous(breaks = 0.05)
-
-
+  scale_x_log10()
+  
+  
 otutabA %>% filter(name %in% top5_micro$name) %>%
   ggplot(aes(x = ni, y = mi)) +
   geom_point() +
@@ -647,11 +655,6 @@ otutabA %>% filter(name %in% top5_micro$name) %>%
   geom_abline() +
   facet_grid(name~person, scales = 'free')
 
-# What is the difference between spore-forming and non spore-fomring ? 
-otutabA %>%
-  ggplot(aes(x = ni, y = miDIVni, color =sporeforming)) +
-  geom_point()+
-  facet_grid(sporeforming ~ person, scales = 'free')
 
 ######
 # 2.7.2024
@@ -663,13 +666,13 @@ relabs_conc = otutab_absrel %>% left_join(ddPCR, by = join_by('Group' =='Sample'
 
 relabs_conc %>%
   filter(name == 'Otu000001') %>%
-  ggplot(aes(x = copies_ng, y = rel_abund)) +
+  ggplot(aes(x = rel_abund, y = copies_ng)) +
   geom_point() +
   facet_wrap(~biota, scales = 'free')
 
 relabs_conc %>%
   filter(name == 'Otu000001') %>%
-  ggplot(aes(x = DNAconc, y = rel_abund)) +
+  ggplot(aes(x = rel_abund, y = DNAconc)) +
   geom_point() +
   facet_wrap(~biota, scales = 'free')
 
@@ -681,6 +684,19 @@ otutabA = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
          sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming'))
 
 # Variability of mi/ni across hosts 
+otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+  mutate(miDIVni = mi/ni) %>%
+  group_by(person, sporeforming, name) %>%
+  summarise(mean = mean(miDIVni),
+            sd = sd(miDIVni), 
+            .groups = 'drop') %>%
+  ggplot(aes(x = person, y = mean)) +
+  geom_boxplot() +
+  scale_y_log10()+
+  facet_grid(~sporeforming, scales = 'free') +
+  labs(x = 'Individual', y = 'Averange mi/ni per OTU')
+
+# Variability of mi/ni across hosts and time 
 otutabA %>% filter(value.x > 0 & value.y > 0) %>%
   mutate(miDIVni = mi/ni) %>%
   group_by(person, day, sporeforming, name) %>%
@@ -695,20 +711,64 @@ otutabA %>% filter(value.x > 0 & value.y > 0) %>%
 
 # 
 otutabA %>% filter(value.x > 0 & value.y > 0) %>%
-  mutate(miDIVni = mi/ni) %>%
-  group_by(person, name) %>%
-  summarise(mean_miDIVni = mean(miDIVni)) %>%
-  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporeforming')) %>%
-  ggplot(aes(x = name, y = mean_miDIVni)) +
-  geom_point() +
+mutate(miDIVni = mi/ni) %>%
+  group_by(person, day, sporeforming) %>%
+  summarise(mean = mean(miDIVni),
+            sd = sd(miDIVni), 
+            .groups = 'drop') %>%
+  ggplot(aes(x = as.factor(day), y = mean, group = sporeforming, color = sporeforming)) +
+  geom_line() +
   scale_y_log10() +
-  facet_grid(sporeforming ~ person, scales = 'free')
+  facet_grid(~person, scales = 'free') +
+  labs(x = 'Day', y = 'Averange mi/ni per person')
 
- # How to depict variation of mi/ni across different OTUs ? 
-
-otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+# Variability across OTUs 
+otutabA %>% filter(value.x > 0 & value.y > 0 ) %>%
   mutate(miDIVni = mi/ni) %>%
   group_by(name) %>%
-  
+  reframe(mean_miDIVni = mean(miDIVni), 
+          mean_relabund.x = mean(rel_abund.x), 
+          mean_relabund.y = mean(rel_abund.y)) %>%
+  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporeforming')) %>%
+  ggplot(aes(x = mean_relabund.y, y = mean_miDIVni)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_y_log10() +
+  coord_cartesian(xlim = c(0, 0.01)) +
+  facet_grid(~sporeforming, scales = 'free')
+# Variability in top5 EtOh abudnant OTUs 
+otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+  filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = as.factor(day), y = mi/ni, group = name, color = name)) +
+  geom_line() +
+  scale_y_log10() +
+  facet_grid(~person, scales = 'free') +
+  labs(x = 'Day', y = 'Averange mi/ni per OTU (top5 EtOH)')
 
-  
+otutabA %>% filter(name == 'Otu000003') %>%
+  ggplot(aes(x = mi/ni, y = person)) +
+  geom_point() +
+  scale_x_log10()
+# Is variability taxon related? 
+otutabA %>% filter(value.x > 0 & value.y > 0 ) %>%
+  group_by(name) %>%
+  reframe(mean_miDIVni = mean(mi/ni)) %>%
+  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporeforming')) %>%
+  left_join(taxtab, by = 'name') %>%
+  ggplot(aes(x = mean_miDIVni, y = Class)) +
+  geom_boxplot() +
+  scale_x_log10() +
+  facet_grid(~sporeforming)
+
+# if I look at SPOREFORMERS, which represent 90% of all abundance in EtOH sample across hosts? 
+list_90_otus = cum_otus_person %>% filter(Cumulative_Percentage < 90)
+
+otutabA %>% filter(value.x > 0 & value.y > 0) %>%
+  right_join(filter(list_90_otus, biota == 'Ethanol resistant fraction'), by = join_by('person', 'name')) %>%
+  group_by(person, day, name) %>%
+  reframe(mean_miDIVni = mean(mi/ni)) %>%
+  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporeforming')) %>%
+  ggplot(aes(x = as.factor(day), y = mean_miDIVni, color = name, group= name)) +
+  geom_line(show.legend = FALSE) +
+  scale_y_log10() +
+  facet_grid(sporeforming~person, scales = 'free')
