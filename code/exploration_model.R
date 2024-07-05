@@ -33,12 +33,12 @@ otu_spore_list =
             otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
             by = join_by('name', 'original_sample', 'person')) %>%
   left_join(taxtab, by = 'name') %>%
-  filter(Phylum == 'Firmicutes') %>%
+  filter(Class == 'Clostridia') %>%
   #group_by(person, name) %>%
   #reframe(value.x = sum(value.x), 
   #         value.y = sum(value.y)) %>%
   # True sporobiota is only if there is at least 1 reads in the microbiota sample and more than that in sporobiota in each person!
-  mutate(biota = ifelse(value.x > 1 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
+  mutate(biota = ifelse(value.x > 5 & value.y > 10 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
   filter(biota == 'Sporobiota') %>%
   pull(name)
 
@@ -472,8 +472,22 @@ otutabR %>%
   ggplot(aes(x = log10(mean_xi), y = log10(mean_yi))) +
   geom_point() +
   facet_wrap(~person)
+## 
+# relative abudnance xi (microbiota) rescaled by yi (ethanol resistant samples)
 
+rel_d = otutab_absrel %>%
+  filter(substr(Group, 1, 1) == 'M') %>%
+  left_join(select(metadata, Group, original_sample), by = 'Group') %>%
+  left_join(otutab_absrel %>%
+              filter(substr(Group, 1, 1) == 'S') %>%
+              left_join(select(metadata, Group, original_sample), by = 'Group'), by = c('original_sample', 'name'))
 
+rel_d %>% 
+  filter(name %in% otu_spore_list) %>%
+  ggplot(aes(x = rel_abund.y, y = rel_abund.x/rel_abund.y)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10()
 
 # 3 
 # How could we take into account absolute abundances 
@@ -576,11 +590,13 @@ cum_otus_person %>% filter(Cumulative_Percentage < 95) %>%
 # Compare absolute abundances 
 otutabA = select(otutab_absrel, Group, name, abs_abund_ng) %>%
   filter(substr(Group, 1, 1) == 'M') %>%
-  left_join(select(metadata, Group, original_sample, biota, person, day), by ='Group') %>%
-  left_join(otutabAs, by = c('original_sample', 'name')) %>%
+  left_join(select(metadata, Group, original_sample, person, day), by ='Group') %>%
+  left_join(select(otutab_absrel, Group, name, abs_abund_ng) %>%
+              filter(substr(Group, 1, 1) == 'S') %>%
+              left_join(select(metadata, Group, original_sample), by ='Group'), by = c('original_sample', 'name')) %>%
   filter(abs_abund_ng.x > 0 & abs_abund_ng.y > 0) %>%
-  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, miDIVni = mi/ni,
-         sporeforming = ifelse(name %in% otu_spore_list, 'Sporeforming', 'Non sporesforming')) 
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, miDIVni = mi/ni) %>%
+  filter(name %in% otu_spore_list) 
 
 otutabA %>% filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = ni, y = mi/ni)) +
@@ -644,11 +660,15 @@ otu_corr %>%
   ggplot(aes(x = value, y = mi/ni)) +
   geom_point() +
   scale_x_log10()
+
+otu_corr %>% filter(estimate > 0) %>%
+  left_join(taxtab, by = 'name')
   
   
-otutabA %>% filter(name %in% top5_micro$name) %>%
+otutabA %>% filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = ni, y = mi)) +
   geom_point() +
+  geom_text(mapping = aes(label = Group.y)) +
   scale_y_log10() +
   scale_x_log10()+
   #geom_hline(yintercept = 1) +
@@ -736,6 +756,7 @@ otutabA %>% filter(value.x > 0 & value.y > 0 ) %>%
   scale_y_log10() +
   coord_cartesian(xlim = c(0, 0.01)) +
   facet_grid(~sporeforming, scales = 'free')
+
 # Variability in top5 EtOh abudnant OTUs 
 otutabA %>% filter(value.x > 0 & value.y > 0) %>%
   filter(name %in% top5_etoh$name) %>%
@@ -772,3 +793,84 @@ otutabA %>% filter(value.x > 0 & value.y > 0) %>%
   geom_line(show.legend = FALSE) +
   scale_y_log10() +
   facet_grid(sporeforming~person, scales = 'free')
+
+##
+# Figure out if mi/ni is correlated within a person ? 
+# with time in a person? 
+# across hosts but in OTU 
+otutabMN = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
+  left_join(select(metadata, Group, original_sample, person, day), by ='Group') %>%
+  left_join(filter(otutab_absrel, substr(Group, 1, 1) == 'S') %>%
+              left_join(select(metadata, Group, original_sample), by ='Group') , by = c('original_sample', 'name')) %>%
+  filter(name %in% otu_spore_list) %>%
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, x = mi/ni, 
+         person = as.factor(person)) %>%
+  select(name, person, day,mi, ni, x, original_sample) %>%
+  filter(!is.na(x) & is.finite(x))
+
+# Is the variance of an OTU correlated with HOST 
+# simple plot
+otutabMN %>%
+  ggplot(aes(x = person, y = mi/ni)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  labs( x = 'Individual', y = 'log10(mi/ni)')
+# doesn't look like it, lets check with variance 
+
+var_host = otutabMN %>%
+  group_by(name) %>%
+  summarise(var_all = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+  left_join(otutabMN %>%
+              group_by(person, name) %>%
+              summarise(var_person = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
+  mutate(log_diff = var_person/var_all)
+
+ggplot(var_host, aes(x = person, y = log_diff)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 1) +
+  labs(x = 'Individuals', y= 'Ratio of variance of log between host and all samples for a given OTU')
+
+# Are OTUs correlated across days in a given host
+otutabMN %>% 
+  #group_by(person, day) %>%
+  #summarise(mean_x = mean(mi/ni, na.rm = TRUE), .groups = 'drop') %>% # this mean introduces Inf values 
+  filter(name %in% top5_etoh$name) %>%
+  ggplot(aes(x = day, y = mi/ni, color = name)) +
+  geom_point() +
+  scale_y_log10() +
+  facet_grid(name~person, scales = 'free')
+
+# If we look at variability over time for 1 OTU and comapre this with variability of all OTUs within a host
+# we can get a better look into variation over time and how time is effecting OTUs 
+var_host_time = otutabMN %>%
+  group_by(person) %>%
+  summarise(var_person = var(mi/ni, na.rm = TRUE), .groups = 'drop') %>%
+  left_join(otutabMN %>%
+              group_by(person, name) %>%
+              summarise(var_person_otu = var(mi/ni, na.rm = TRUE), .groups = 'drop'), by = 'person') %>%
+  mutate(var_ratio = var_person_otu/var_person)
+
+var_host_time %>%
+  ggplot(aes(x = person, y = var_ratio)) +
+  geom_boxplot()
+
+# Are OTUs correlated across hosts, so each OTU for them selves?
+xtab = otutabMN %>% 
+  #mutate(x = log(x)) %>%
+  select(name, x, original_sample) %>%
+  pivot_wider(names_from = 'name', values_from = 'x', values_fill = 0) %>%
+  column_to_rownames('original_sample')
+
+xtab_cor = cor(xtab) %>%
+  as.data.frame() %>%
+  rownames_to_column('name2') %>%
+  pivot_longer(cols=starts_with('Otu')) %>%
+  arrange(name, desc(value)) 
+
+ggplot(xtab_cor, aes(x =name, y = name2, fill = value)) +
+  geom_tile()
+
+xtab_otus = xtab_cor %>%
+  filter(value > 0.7 & name != name2)
+
+cor_xtab = as.matrix(cor(xtab))) 
