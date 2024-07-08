@@ -868,9 +868,68 @@ xtab_cor = cor(xtab) %>%
   arrange(name, desc(value)) 
 
 ggplot(xtab_cor, aes(x =name, y = name2, fill = value)) +
-  geom_tile()
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 90, size = 6), 
+        axis.text.y = element_text(size = 6)) +
+  labs( x = '', y = '')
 
 xtab_otus = xtab_cor %>%
   filter(value > 0.7 & name != name2)
 
-cor_xtab = as.matrix(cor(xtab))) 
+## 
+# How do copies per ul correalte over days and how does this eefect the mi/ni ?
+ddPCR = readRDS('data/r_data/ddPCR.RDS')
+
+otutab_absrel %>% 
+  left_join(metadata, by = 'Group') %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  group_by(person, day, biota) %>%
+  summarise(sum_c = sum(copies_ng), .groups = 'drop')%>%
+  ggplot(aes(x = day, y = sum_c, color = person)) +
+  geom_line(linewidth= 1) +
+  facet_grid(biota~person, scales = 'free')
+
+otutabMN %>%
+  group_by(person, day) %>%
+  summarise(sum_mn = sum(mi/ni)) %>%
+  ggplot(aes(x = day, y = sum_mn, color = person)) +
+  geom_line() +
+  scale_y_log10()
+
+metadata %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  left_join(otutabMN %>%
+              group_by(person, day) %>%
+              summarise(mean_mn = mean(mi/ni), .groups = 'drop'), by = join_by('person', 'day')) %>%
+  ggplot(aes(x = copies_ng, y = mean_mn, color = biota)) +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_point()
+
+
+# avg mi vs avg ni over samples 
+otutabMN %>%
+  group_by(original_sample) %>%
+  reframe(avg_mi = mean(mi), 
+          avg_ni = mean(ni)) %>%
+  ggplot(aes(x = avg_ni, y = avg_mi)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10()
+# over OTUs 
+otutabMN %>%
+  group_by(name) %>%
+  reframe(avg_mi = mean(mi), 
+          avg_ni = mean(ni)) %>%
+  ggplot(aes(x = avg_ni, y = avg_mi)) +
+  geom_point() +
+  geom_text(aes(label = name)) +
+  scale_x_log10() +
+  scale_y_log10()
+
+# not averged
+otutabMN %>%
+  ggplot(aes(x = ni, y = mi, color = name)) +
+  geom_point(show.legend = FALSE) +
+  scale_x_log10() +
+  scale_y_log10()
