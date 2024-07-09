@@ -815,7 +815,7 @@ otutabMN = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
   left_join(filter(otutab_absrel, substr(Group, 1, 1) == 'S') %>%
               left_join(select(metadata, Group, original_sample), by ='Group') , by = c('original_sample', 'name')) %>%
   filter(name %in% otu_spore_list 
-         #& name %in% otu90
+         & name %in% otu90
          ) %>%
   mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, x = mi/ni, 
          person = as.factor(person)) %>%
@@ -838,27 +838,53 @@ var_host = otutabMN %>%
   left_join(otutabMN %>%
               group_by(person, name) %>%
               summarise(var_person = var(mi/ni, na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
-  mutate(var_ratio = var_person/var_all) %>%
+  mutate(log_var_ratio = log(var_person/var_all)) %>%
   left_join(taxtab, by = 'name')
 
 
-ggplot(var_host, aes(x = person, y = var_ratio)) +
+ggplot(var_host, aes(x = person, y = log_var_ratio)) +
   geom_boxplot() +
   geom_jitter() +
-  scale_y_log10() +
   geom_hline(yintercept = 1) +
-  facet_wrap(~Family, scales = 'free', nrow = 1) +
-  labs(x = 'Individuals', y= 'Ratio of variance(mi/ni) between host and all samples for a given OTU')
+  labs(x = 'Individuals', y= 'Log of ratio variance(mi/ni within host) / variance(mi/ni in all hosts)')
+
+# Statistics if the variances are different between host and all host for each OTU 
+results= data.frame()
+for (n in unique(otutabMN$name)) {
+  for ( p in unique(otutabMN$person)) {
+    otu_sub = filter(otutabMN, name == n & person == p)
+    otu_all = filter(otutabMN, name == n)
+    res = var.test(otu_sub$x, otu_all$x, ratio = 1, alternative = 'less')
+    results = rbind(results, data.frame(name = n, 
+                                        person = p, 
+                                        Fvalue = res$statistic, 
+                                        Pvalue = res$p.value))
+  }
+}
+
+results 
 
 # Are OTUs correlated across days in a given host
 otutabMN %>% 
-  group_by(person, day) %>%
-  summarise(mean_x = mean(mi/ni, na.rm = TRUE), .groups = 'drop') %>% # this mean introduces Inf values 
+  ggplot(aes(x = day, y = mi/ni, color = name)) +
+  geom_line(show.legend = FALSE) +
+  scale_y_log10() +
+  facet_grid(~person, scales = 'free')
+
+otutabMN %>%
   filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = day, y = mi/ni, color = name)) +
   geom_point() +
   scale_y_log10() +
-  facet_grid(name~person, scales = 'free')
+  facet_grid(name~person)
+
+otutabMN %>%
+  left_join(select(filter(metadata, biota == 'Microbiota'), original_sample, time_point), by = 'original_sample') %>%
+  ggplot(aes(x = mi/ni, color = as.factor(time_point))) +
+  geom_density(linewidth = 1) +
+  scale_x_log10() +
+  facet_wrap(~person, scales = 'free') +
+  labs(color = 'Time point')
 
 # If we look at variability over time for 1 OTU and compare this with variability of all OTUs within a host
 # we can get a better look into variation over time and how time is effecting OTUs 
