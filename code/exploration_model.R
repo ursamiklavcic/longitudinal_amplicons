@@ -864,6 +864,26 @@ for (n in unique(otutabMN$name)) {
 
 results 
 
+##
+# If we look at variability over time for 1 OTU and compare this with variability of all OTUs within a host
+# we can get a better look into variation over time and how time is effecting OTUs 
+var_host_time = otutabMN %>%
+  group_by(person) %>%
+  summarise(var_person = var(mi/ni, na.rm = TRUE), .groups = 'drop') %>%
+  left_join(otutabMN %>%
+              group_by(person, name) %>%
+              summarise(var_person_otu = var(mi/ni, na.rm = TRUE), .groups = 'drop'), by = 'person') %>%
+  mutate(var_ratio = var_person_otu/var_person)
+
+var_host_time %>%
+  ggplot(aes(x = person, y = var_ratio)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  geom_hline(yintercept = 1)
+####
+## Not quite sure where I was going with this 
+
+##
 # Are OTUs correlated across days in a given host
 otutabMN %>% 
   ggplot(aes(x = day, y = mi/ni, color = name)) +
@@ -883,27 +903,37 @@ otutabMN %>%
   ggplot(aes(x = mi/ni, color = as.factor(time_point))) +
   geom_density(linewidth = 1) +
   scale_x_log10() +
-  facet_wrap(~person, scales = 'free') +
+  facet_wrap(~person) +
   labs(color = 'Time point')
 
-# If we look at variability over time for 1 OTU and compare this with variability of all OTUs within a host
-# we can get a better look into variation over time and how time is effecting OTUs 
-otutabMN %>%
-  mutate(logx = as.numeric(log(mi/ni))) %>%
-  group_by(person) %>%
-  reframe( sd = sd(logx), 
-           mean = mean(logx), 
-           x = sd/mean*100)
-  summarise(var_person = (sd(log(mi/ni)) / mean(log(mi/ni)) * 100), .groups = 'drop') %>%
-  left_join(otutabMN %>%
-              mutate(logx = log10(x)) %>%
-              group_by(person, name) %>%
-              summarise(var_person_otu = var(logx, na.rm = TRUE), .groups = 'drop'), by = 'person') %>%
-  mutate(var_ratio = var_person_otu/var_person)
+# Statistics comparison of day vs all days in an individual. 
+results= data.frame()
+for (p in unique(otutabMN$person)) {
+  otu_all = filter(otutabMN, person == p)
+  for (d in unique(otu_all$day)) {
+    otu_sub = filter(otu_all, day == d)
+    res = var.test(otu_sub$x, otu_all$x, ratio = 1, alternative = 'less')
+    results = rbind(results, data.frame(day = d,
+                                        person = p, 
+                                        Fvalue = res$statistic, 
+                                        Pvalue = res$p.value))
+  }
+}
 
-var_host_time %>%
-  ggplot(aes(x = person, y = var_ratio)) +
-  geom_boxplot() 
+results %>%
+  filter(Pvalue < 0.005)
+
+otutabMN %>%
+  left_join(select(filter(metadata, biota == 'Microbiota'), original_sample, time_point), by = 'original_sample') %>%
+  left_join(results, by = c('person', 'day')) %>%
+  filter(Pvalue < 0.05) %>%
+  mutate(diff = ifelse(Fvalue > 1, 'More variable in a day', 'More variable in a person')) %>%
+  ggplot(aes(x = mi/ni, color = as.factor(time_point), linetype = diff)) +
+  geom_density(linewidth = 1) +
+  scale_x_log10() +
+  facet_wrap(~person) +
+  labs(color = 'Time point')
+
 
 ##
 # Are OTUs correlated across hosts, so each OTU for them selves?
@@ -982,7 +1012,7 @@ pairwise.wilcox.test(rel_mn$var, rel_mn$Family, p.adjust.method = 'BH')[[3]] %>%
   as.matrix() %>%
   as.data.frame() %>%
   rownames_to_column('name2') %>%
-  pivot_longer(names_to = 'name', values_to = 'wilcox', cols = 2:8) 
+  pivot_longer(names_to = 'name', values_to = 'wilcox', cols = 2:5) 
 
 
 
@@ -997,7 +1027,7 @@ otutab_absrel %>%
   summarise(sum_c = sum(copies_ng), .groups = 'drop')%>%
   ggplot(aes(x = day, y = sum_c, color = person)) +
   geom_line(linewidth= 1) +
-  facet_grid(biota~person, scales = 'free')
+  facet_grid(biota~person, scales = 'free') 
 
 otutabMN %>%
   group_by(person, day) %>%
@@ -1012,10 +1042,10 @@ metadata %>%
               group_by(person, day) %>%
               summarise(mean_mn = mean(mi/ni), .groups = 'drop'), by = join_by('person', 'day')) %>%
   ggplot(aes(x = copies_ng, y = mean_mn, color = biota)) +
-  scale_x_log10() +
   scale_y_log10() +
-  geom_point()
-
+  geom_point() +
+  facet_wrap(~biota, scales = 'free') +
+  labs( x = 'Copies per ul sample', y = 'Mean mi/ni for each sample')
 
 # avg mi vs avg ni over samples 
 otutabMN %>%
@@ -1043,5 +1073,20 @@ otutabMN %>%
   geom_point(show.legend = FALSE) +
   scale_x_log10() +
   scale_y_log10()
+
+# Species area curves for host /all hosts
+otutab_absrel %>%
+  left_join(metadata, by = 'Group') %>%
+  ggplot(aes(x = value, color = person)) +
+  geom_density() +
+  scale_x_log10()
+
+otutab_absrel %>%
+  ggplot(aes(x = value)) +
+  geom_density() +
+  scale_x_log10()
+
+
+## Is the relatinoship of mi/ni the same as if we take relabund micro/relabund ethnol resistant fraction and make this plots? 
 
 
