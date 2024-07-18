@@ -33,7 +33,7 @@ otu_spore_list =
             otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
             by = join_by('name', 'original_sample', 'person')) %>%
   left_join(taxtab, by = 'name') %>%
-  filter(Class == 'Clostridia') %>%
+  #filter(Phylum == 'Firmicutes') %>%
   #group_by(person, name) %>%
   #reframe(value.x = sum(value.x), 
   #         value.y = sum(value.y)) %>%
@@ -125,6 +125,14 @@ ggplot(rank_df, aes(x = norm_rank, color = fraction)) +
   scale_color_manual(values = colsm) +
   labs(x = 'Rank', y = 'P(d)', title = 'Microbiota samples')
 
+# Color by phylum 
+rank_df %>% left_join(taxtab, by = 'name') %>%
+  ggplot(aes(x = norm_rank, color = Phylum)) +
+  geom_density(linewidth = 1) +
+  facet_grid(~fraction) +
+  labs(x = 'Rank', y = 'P(d)', title = 'Microbiota samples')
+  
+
 # For ethanol resistant fraction
 rankE = rank_avg_otus(otutabEM, 'S')
 rank_df = as.data.frame(rankE) %>%
@@ -137,6 +145,11 @@ ggplot(rank_df, aes(x = norm_rank, color = fraction)) +
   scale_color_manual(values = colsm) +
   labs(x = 'Rank', y = 'P(d)', title = 'Ethanol resistant samples')
 
+rank_df %>% left_join(taxtab, by = 'name') %>%
+  ggplot(aes(x = norm_rank, color = Phylum)) +
+  geom_density(linewidth = 1) +
+  facet_grid(~fraction) +
+  labs(x = 'Rank', y = 'P(d)', title = 'Ethnaol resistant samples')
 # 1b 
 # DO the same as above, but use coefficient of variance 
 rank_cv = function(otutable, biota) {
@@ -801,15 +814,28 @@ otutabA %>% filter(value.x > 0 & value.y > 0) %>%
 
 #
 # OTUs that are present in 90% of all samples 
-otu_always = otutab_absrel %>%
+
+otuPA = otutab_absrel %>%
   group_by(Group, name) %>%
   summarise(PA = ifelse(sum(value, na.rm = TRUE) > 0, 1, 0), .groups = 'drop') %>%
   pivot_wider(names_from = 'Group', values_from = 'PA') %>%
-  column_to_rownames('name') %>%
+  column_to_rownames('name')
+
+otu_always =  otuPA %>%
+  select(starts_with('M')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum == (ncol(.)-1)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.9)) %>%
   rownames_to_column('name') %>%
   pull(name)
+
+otu_alwaysS = otuPA %>%
+  select(starts_with('S')) %>%
+  mutate(otu_sum = rowSums(.)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.9)) %>%
+  rownames_to_column('name') %>%
+  pull(name)
+
+otu_90 = intersect(otu_always, otu_alwaysS)
 
 # Use only always abundant OTUs 
 # Variance of log(mi/ni)
@@ -819,12 +845,12 @@ otutabMN = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
   left_join(filter(otutab_absrel, substr(Group, 1, 1) == 'S') %>%
               left_join(select(metadata, Group, original_sample), by ='Group') , by = c('original_sample', 'name')) %>%
   filter(name %in% otu_spore_list 
-         & name %in% otu_always
+         & name %in% otu_90
          ) %>%
-  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y, x = mi/ni, 
+  mutate(ni = abs_abund_ng.x, mi = abs_abund_ng.y,
          person = as.factor(person)) %>%
-  select(name, person, day, mi, ni, x, original_sample) %>%
-  filter(!is.na(x))
+  select(name, person, day, mi, ni, original_sample) %>%
+  filter(!is.na(mi) & !is.na(ni))
 
 ##
 # Is the variance of an OTU correlated with HOST 
@@ -851,13 +877,21 @@ ggplot(var_host, aes(x = person, y = var_log_ratio)) +
   geom_hline(yintercept = 1) +
   labs(x = 'Individuals', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)')
 
+# # What if we look at individual OTUs do some have larger variation than others?
+# ggplot(var_host, aes(x = person, y = var_log_ratio)) +
+#   geom_boxplot() +
+#   geom_jitter(aes(color = person), size = 2) +
+#   geom_hline(yintercept = 1) +
+#   facet_wrap(~name, nrow=2) +
+#   labs(x = 'OTUs', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)')
+
 # Statistics if the variances are different between host and all host for each OTU 
 results= data.frame()
 for (n in unique(otutabMN$name)) {
   for ( p in unique(otutabMN$person)) {
     otu_sub = filter(otutabMN, name == n & person == p)
     otu_all = filter(otutabMN, name == n)
-    res = var.test(otu_sub$x, otu_all$x, ratio = 1, alternative = 'less')
+    res = var.test(otu_sub$mi/otu_sub$ni, otu_all$mi/otu_all$ni, ratio = 1, alternative = 'less')
     results = rbind(results, data.frame(name = n, 
                                         person = p, 
                                         Fvalue = res$statistic, 
@@ -874,8 +908,6 @@ results %>%
   geom_hline(yintercept = 1) +
   labs(x = 'Individuals', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)')
   
-
-
 ##
 # Are OTUs correlated across days in a given host
 otutabMN %>% 
@@ -885,7 +917,7 @@ otutabMN %>%
   facet_grid(~person, scales = 'free')
 
 otutabMN %>%
-  filter(name %in% top5_etoh$name) %>%
+  #filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = day, y = mi/ni, color = name)) +
   geom_point() +
   scale_y_log10() +
@@ -899,47 +931,55 @@ otutabMN %>%
   facet_wrap(~person) +
   labs(color = 'Time point')
 
-otutabMN %>%
-  left_join(select(filter(metadata, biota == 'Microbiota'), original_sample, time_point), by = 'original_sample') %>%
-  ggplot(aes(x = mi/ni, color = as.factor(time_point))) +
-  geom_density(linewidth = 1) +
-  scale_x_log10() +
-  facet_wrap(~person) +
-  labs(color = 'Time point')
-
 # Statistics comparison of day vs all days in an individual. 
-# If we look at variability (ratio) variation of averages of all OTUs of one time point within a host VS variation of 1 OTU within a host for all time  
+# If we normalize the variation in a day by the mean variation in time for all OTUs in a person?   
+# mean_time = otutabMN %>%
+#   group_by(name) %>%
+#   summarise(mean = mean(log(mi/ni), na.rm = TRUE), .groups = 'drop') %>% 
+#   filter(mean < Inf & mean > -Inf) %>%
+#   summarise(vary = var(mean, na.rm = TRUE)) %>%
+#   pull(vary)
+# 
+# var_time = otutabMN %>%
+#   group_by(person, day) %>%
+#   reframe(log_x = log(mi/ni))
+# 
+# is.na(var_time) <- sapply(var_time, is.infinite)
+# 
+# var_time = var_time %>% group_by(person, day) %>%
+#   summarise(var_day_person = var(log_x, na.rm = TRUE))
+# 
+# var_time %>%
+#   ggplot(aes(x = day, y = var_day_person/mean_time, color = person)) +
+#   geom_point(size = 3) +
+#   geom_line() +
+#   facet_wrap(~person)
+#####
 
-var_host_time = otutabMN %>%
-  group_by(person, day) %>%
-  summarise(var_day_person = var(log(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
-  left_join(otutabMN %>%
-              group_by(person, name) %>%
-              summarise(var_person_otu = var(log(mi/ni), na.rm = TRUE), .groups = 'drop'), by = 'person') %>%
-  mutate(var_ratio = var_day_person/var_person_otu)
+# Normalize the time value, by mean value if mi/ni for each OTU
+otu_time = otutabMN %>%
+  group_by(name) %>%
+  mutate(mean = mean(mi/ni), 
+         y = (mi/ni)/mean, 
+         mean = ifelse(is.infinite(mean), NA, mean), 
+         y = ifelse(is.infinite(y), NA, y))
 
-var_host_time %>%
-  ggplot(aes(x = person, y = var_ratio)) +
-  geom_boxplot() +
-  geom_jitter() +
-  geom_hline(yintercept = 1) +
-  labs(x = 'Individuals', y= 'Ratio of log(mi(ni all OTUs, per day, per host) / log(mi/ni one OTU, per host)')
+otu_time %>%
+  ggplot(aes(x = day, y =y)) +
+  geom_point() +
+  geom_line(aes(color = name)) +
+  scale_y_log10() +
+  facet_wrap(~person) +
+  labs(x = 'Day', y = '(mi/ni) / mean (mi/ni)', color = '')
 
-var_host_time %>%
-  ggplot(aes(x = as.factor(day), y = var_ratio)) +
-  geom_boxplot() +
-  geom_jitter(aes(color = name)) +
-  geom_hline(yintercept = 1) +
-  facet_wrap(~person, scales = 'free_y', nrow = 3) +
-  labs(x = 'Days', y= 'Ratio of log(mi(ni all OTUs, per day, per host) / log(mi/ni one OTU, per host)')
+otu_time %>% 
+  ggplot(aes(x = day, y = y)) +
+  geom_point(aes(color = person), size = 2) +
+  geom_hline(yintercept = 1) + 
+  scale_y_log10() +
+  facet_wrap(~name)  
 
-# What is here we look at OTU identity (individual OTU)
-var_host_time %>%
-  ggplot(aes(x = name, y = var_ratio)) +
-  geom_boxplot() +
-  geom_jitter(aes(color = person)) +
-  geom_hline(yintercept = 1) +
-  labs(x = 'OTU', y= 'Ratio of log(mi(ni all OTUs, per day, per host) / log(mi/ni one OTU, per host)', color = 'Individual')
+
 
 
 ##
@@ -948,6 +988,7 @@ results = data.frame()
 for (p in unique(otutabMN$person)) {
   xtab = otutabMN %>% 
     filter(person == p) %>%
+    mutate(x = mi/ni) %>%
     select(name, x, original_sample) %>%
     pivot_wider(names_from = 'name', values_from = 'x', values_fill = 0) %>%
     column_to_rownames('original_sample')
@@ -977,56 +1018,82 @@ otu_rel = otutab_absrel %>%
 
 rel_mn = otutabMN %>% 
   group_by(name) %>%
-  reframe(var = var(x)) %>%
+  reframe(var = var(log(mi/ni))) %>%
   left_join(otu_rel, by = 'name' ) %>%
   left_join(taxtab, by = 'name')
 
 cor.test(rel_mn$var, rel_mn$mean_rel, method = 'pearson')
 
+library(scales)
 otutabMN %>% 
   group_by(name) %>%
-  reframe(var = var(x)) %>%
+  reframe(var = var(log(mi/ni), na.rm = TRUE)) %>%
   left_join(otu_rel, by = 'name' ) %>%
   ggplot(aes(x = mean_rel, y = var)) +
   geom_point() +
   annotate('text', x = 0.1, y = 1e2, label = paste0('pvalue : ', scientific(cor.test(rel_mn$var, rel_mn$mean_rel, method = 'pearson')$p.value))) +
-  scale_y_log10() +
   scale_x_log10() +
   geom_abline()
 
 # what about looking in family ?   
 otutabMN %>% 
-  group_by(name) %>%
-  reframe(var = var(x)) %>%
+  group_by(person, name) %>%
+  reframe(var = var(log(mi/ni))) %>%
   left_join(taxtab, by = 'name' ) %>%
-  ggplot(aes(x = reorder(Family, var), y = var, color = Family)) +
+  ggplot(aes(x = reorder(Family, var), y = var)) +
   geom_boxplot() + 
-  geom_jitter() +
-  annotate('text', x= 'Eubacteriaceae', y = 1e0, label = paste0('pvalue : ',scientific(kruskal.test(rel_mn$var, rel_mn$Family)$p.value))) +
+  geom_jitter(aes( color = Family), size =3) +
+ # annotate('text', x= 'Eubacteriaceae', y = 1e0, label = paste0('pvalue : ',scientific(kruskal.test(rel_mn$var, rel_mn$Family)$p.value))) +
   scale_y_log10() +
+  geom_hline(yintercept = 1) +
+  facet_wrap(~person, nrow=3) +
+  theme(axis.text.x = element_text(angle=90))
+
+# Are there still differences in the spore production even if looking at each individual?
+corr_family = data.frame()
+for (p in unique(otutabMN$person)) {
+  otu_rel = otutab_absrel %>%
+    left_join(metadata, by = 'Group') %>%
+    filter(person == p)  %>%
+    group_by(name) %>%
+    summarise(mean_rel = mean(rel_abund))
+  
+  otu_sub = otutabMN %>% 
+    filter(person == p)  %>%
+    group_by(name) %>%
+    reframe(var = var(log(mi/ni))) %>%
+    left_join(otu_rel, by = 'name' ) %>%
+    left_join(taxtab, by = 'name')
+    
+  cor = kruskal.test(otu_sub$var, otu_sub$Family)
+  
+  corr_family = rbind(corr_family, data.frame(pvalue = cor$p.value, 
+                                              person = p, 
+                                              statistic = cor$statistic))
+  
+}
+
+corr_family
+
+# why am I looking at variation in spore production in each Family, what about plain spore production mi/ni ? 
+otutabMN %>%
+  left_join(taxtab, by = 'name' ) %>%
+  ggplot(aes(x = Family, y = log(mi/ni))) +
+  geom_boxplot() +
   theme(axis.text.x = element_text(angle=90))
 
 # Level of Genus ?
 otutabMN %>% 
   group_by(name) %>%
-  reframe(var = var(x)) %>%
+  reframe(var = var(log(mi/ni), na.rm=TRUE)) %>%
   left_join(taxtab, by = 'name' ) %>%
   ggplot(aes(x = reorder(Genus, var), y = var, color = Genus)) +
   geom_violin() +
   geom_jitter() +
-  scale_y_log10() +
   theme(axis.text.x = element_text(angle=90))
 
 # statistics 
 kruskal.test(rel_mn$var, rel_mn$Family)
-
-pairwise.wilcox.test(rel_mn$var, rel_mn$Family, p.adjust.method = 'BH')[[3]] %>%
-  as.matrix() %>%
-  as.data.frame() %>%
-  rownames_to_column('name2') %>%
-  pivot_longer(names_to = 'name', values_to = 'wilcox', cols = 2:4) 
-
-
 
 ## 
 # How do copies per ul correalte over days and how does this eefect the mi/ni ?
@@ -1101,5 +1168,48 @@ otutab_absrel %>%
 
 ## Is the relatinoship of mi/ni the same as if we take relabund micro/relabund ethnol resistant fraction and make this plots as I did for mi/ni? 
 
+# Which Bacteoidestes were also found in etoh sample 
+bact = otutab_absrel %>%
+  filter(substr(Group, 1, 1) == 'S') %>%
+  left_join(taxtab, by = 'name')
 
+# Aleksander plot = variation in the 
+# Variance of relative abundance of OTUs that are sporeforming and non sporeforming ?
+var_mean = otutab_absrel %>%
+  filter(substr(Group, 1,1) == 'M') %>%
+  left_join(metadata, by = 'Group') %>%
+  group_by(person, name) %>%
+  reframe(var_host = var(log10(rel_abund), na.rm= TRUE), 
+          mean_host = mean(rel_abund)) %>%
+  mutate(sporeforming = ifelse(name %in% otu_spore_list, 'sporeforming', 'non-sporeforming')) %>%
+  left_join(taxtab, by = 'name')
 
+var_mean %>%
+  filter(Phylum %in% c('Firmicutes', 'Proteobacteria', 'Bacteroidetes', 'Actinobacteria', 'Bacteria_unclassified')) %>%
+  ggplot(aes(x = log10(mean_host), y = var_host, color = sporeforming)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  facet_grid(~Phylum, scales = 'free')
+
+# What about the correaltion between the two linear models ?
+model_res = data.frame()
+for (ph in unique(var_mean$Phylum)) {
+  sub = filter(var_mean, Phylum == ph) %>%
+    filter(!is.nan(var_host))
+  
+  if (nrow(sub) > 0 & length(unique(sub$sporeforming)) == 2) {
+    model = lm(log10(mean_host) ~ var_host * sporeforming, data = sub)
+    anova_res = anova(model)
+    model_res = rbind(model_res, data.frame(Phylum = ph, 
+                                            pvalue = anova_res$`Pr(>F)`[3]))
+  } else {
+    # Add NA to model_res
+    model_res = rbind(model_res, data.frame(Phylum = ph, 
+                                            pvalue = NA))
+  }
+}
+
+model_res
+
+# Samo v Firmicutes in Proteobacteria sta statistično signifikatno različna naklona med sporogenimi in nesporogenimi OTUji. 
+  
