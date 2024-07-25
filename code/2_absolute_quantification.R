@@ -50,7 +50,12 @@ ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_re
   left_join(samples_info, by =join_by('Sample'=='Group')) %>%
   filter(AcceptedDroplets > 10000 & Positives > 10) %>%
   # Calculate the copy number of 16s rRNA gene per ng of DNA
-  mutate( copies_ng = (CopiesPer20uLWell*0.5*dilution_ddPCR)/DNAconc_seq)
+  # concentration = Poisson correlted value copies per ul
+  # 25/2.5 = adjust for the amount of DNA in reaction
+  # 25/20 = adjust for the reaction made VS reaction used
+  # dilution of the DNA 
+  # dilution from original samples to normalized value
+  mutate(copies_ng = (Concentration * (25/2.5) * (25/20) * dilution_ddPCR * (DNAconc/DNAconc_seq)))
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 # Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
@@ -69,5 +74,4 @@ otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   select(Group, name, value, rel_abund, abs_abund_ng)
 
 saveRDS( otutab_absrel, 'data/r_data/otutab_absabund.RDS')
-write.csv(otutab_absrel, 'data/csv_files/otutab_absrel_long.csv', row.names = FALSE)
 
