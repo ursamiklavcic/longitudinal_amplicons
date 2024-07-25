@@ -55,7 +55,7 @@ ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_re
   # 25/20 = adjust for the reaction made VS reaction used
   # dilution of the DNA 
   # dilution from original samples to normalized value
-  mutate(copies_ng = (Concentration * (25/2.5) * (25/20) * dilution_ddPCR * (DNAconc/DNAconc_seq)))
+  mutate(copies = (Concentration * (25/2.5) * (25/20) * dilution_ddPCR * (DNAconc/DNAconc_seq)))
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 # Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
@@ -69,9 +69,9 @@ otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   mutate(rel_abund = value/sum(value)) %>%
   ungroup() %>%
   left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-  mutate(abs_abund_ng = rel_abund*copies_ng) %>%
+  mutate(norm_abund = rel_abund*copies) %>%
   filter(!is.na(Well)) %>%
-  select(Group, name, value, rel_abund, abs_abund_ng)
+  select(Group, name, value, rel_abund, norm_abund)
 
 saveRDS( otutab_absrel, 'data/r_data/otutab_absabund.RDS')
 
