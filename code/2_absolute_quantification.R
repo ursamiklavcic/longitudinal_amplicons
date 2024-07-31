@@ -36,19 +36,24 @@ read.quantasoft = function(file) {
 # 
 samples_info = read_excel('data/vzorci.xlsx', sheet = 6)
 
-# 
-ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_results.csv') %>%
-  mutate(plate = 1) %>%
-  rbind(read.quantasoft('data/absolute_quantification/20240322_plate2_updated_results.csv') %>% 
-          mutate(plate = 2)) %>%
-  rbind(read.quantasoft('data/absolute_quantification/20240327_plate3_update_results_repeats.csv') %>%
-          mutate(plate = 3)) %>%
-  rbind(read.quantasoft('data/absolute_quantification/20240513_ddPCR_v3v4_sporobiota_1_results.csv') %>% 
-          mutate(plate = 4)) %>%
-  rbind(read.quantasoft('data/absolute_quantification/20240513_ddPCR_v3v4_sporobiota_2_results_updated.csv') %>% 
-          mutate(plate = 5)) %>%
+plate1_m  = read.quantasoft('data/absolute_quantification/original_files/20240322_ddPCR_v3v4_microbiota_plate1_results.csv') %>%
+  filter(AcceptedDroplets > 10000 & Positives > 12)
+
+plate2_m = read.quantasoft('data/absolute_quantification/original_files/20240322_ddPCR_v3v4_microbiota_plate2_results.csv') %>%
+  filter(AcceptedDroplets > 10000 & Positives > 8)
+
+plates_e = read.quantasoft('data/absolute_quantification/original_files/20240513_ddPCR_v3v4_sporobiota_1_results.csv') %>%
+  rbind(read.quantasoft('data/absolute_quantification/original_files/20240513_ddPCR_v3v4_sporobiota_2_results.csv')) %>%
+  filter(AcceptedDroplets > 10000 & Positives > 1) %>%
+  # Exclude from analysis because the amount of DNA was insufficient SB008, SB009, SE002, SE003, SF001, SF009, SH007, SC013
+  filter(Sample %in% c('SB008', 'SB009', 'SE002', 'SE003', 'SF001', 'SF009', 'SH007', 'SC013'))
+
+sample = read.quantasoft('data/absolute_quantification/original_files/MA001.csv') 
+
+ddPCR = rbind(plate1_m, plate2_m, plates_e, sample) %>%
+  group_by(Sample) %>%
+  summarise(Concentration = mean(Concentration)) %>%
   left_join(samples_info, by =join_by('Sample'=='Group')) %>%
-  filter(AcceptedDroplets > 10000 & Positives > 10) %>%
   # Calculate the copy number of 16s rRNA gene per ng of DNA
   # concentration = Poisson correlted value copies per ul
   # 25/2.5 = adjust for the amount of DNA in reaction
@@ -56,6 +61,7 @@ ddPCR = read.quantasoft('data/absolute_quantification/20240322_plate1_updated_re
   # dilution of the DNA 
   # dilution from original samples to normalized value
   mutate(copies = (Concentration * (25/2.5) * (25/20) * dilution_ddPCR * (DNAconc/DNAconc_seq)))
+
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
 # Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
