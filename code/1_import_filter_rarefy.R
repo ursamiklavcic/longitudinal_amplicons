@@ -4,14 +4,16 @@
 
 library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
 library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
-library(tidyverse)
-library(vegan)
-library(lubridate)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(tibble)
 library(ape)
+library(vegan)
+library(stringr)
+library(lubridate)
 
 set.seed(96)
-theme_set(theme_bw())
-
 
 # Exploration
 shared = read_tsv('data/mothur/final.opti_mcc.shared') %>%
@@ -45,7 +47,6 @@ otutabEM_pre = shared_pre %>%
 # Rarefy the data once - as we sequenced so deep that for the first analysis this is not crucial !
 otutabEM = rrarefy(otutabEM_pre, sample=reads_per_sample)
 saveRDS(otutabEM, 'data/r_data/otutabEM.RDS')
-write.csv(as.data.frame(otutabEM) %>% rownames_to_column('Group'), 'data/csv_files/otutab_filt.csv', row.names=FALSE)
 
 # Extract OTUs that are present rarefied table 
 otu_names = as.data.frame(otutabEM) %>% colnames() 
@@ -59,8 +60,7 @@ taxtab = read_tsv('data/mothur/final.opti_mcc.0.03.cons.taxonomy') %>%
   separate(taxonomy, into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus"),
            sep=";") 
 
-saveRDS(taxtab, 'data/r_data/taxonomy.RDS')
-write.csv(taxtab, 'data/csv_files/taxtab_filt.csv', row.names=FALSE)
+saveRDS(taxtab, 'data/r_data/taxtab.RDS')
 
 # Import metadata
 metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
@@ -69,33 +69,42 @@ metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
   mutate(biota = ifelse(biota == 'microbiota', 'Microbiota', 'Ethanol resistant fraction'))
 
 saveRDS(metadata, 'data/r_data/metadata.RDS')
-write.csv(metadata, 'data/csv_files/metadata_file.csv', row.names = FALSE)
 
-# Data for sporobiota VS microbiota 
+##
+# Subsets for my analysis! 
+
+# Bulk microbiota = all from microbiota sample = not removing anything 
+# Ethnaol resistant fraction = not removing anything
 otu_long = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
   pivot_longer(cols = starts_with('Otu')) %>%
-  left_join(metadata %>% select(original_sample, Group), by = 'Group')
+  left_join(metadata %>% select(original_sample, Group, person), by = 'Group')
 
-# My strategy, as I have relative amounts of OTUs and not absolute! 
-otutab_pre =                       # Keep all observations in x and y 
+# sporeformers_list = OTUs that were present in both microbiota and ethanol resistant samples and have more counts in ethanol resistant sample than in microbiota sample 
+sporeformers_list =                       
   left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
             otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
-            by = join_by('name', 'original_sample')) %>%
+            by = join_by('name', 'original_sample', 'person')) %>%
   left_join(taxtab, by = 'name') %>%
-  # True sporobiota is only if there is at least 2 reads in the microbiota sample and more than that in sporobiota
-  mutate(biota = ifelse(value.x > 1 & value.y > value.x & Phylum == 'Firmicutes', 'sporobiota', 'microbiota')) %>%
-  mutate(value.yy = ifelse(biota == 'sporobiota', value.x, 0))
+  filter(Phylum == 'Firmicutes') %>%
+  #group_by(person, name) %>%
+  #reframe(value.x = sum(value.x), value.y = sum(value.y)) %>%
+  # True sporobiota is only if there is at least 5 reads in the microbiota sample and more than 10 in sporobiota in each sample
+  mutate(biota = ifelse(value.x > 5 & value.y > 10 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
+  filter(biota == 'Sporobiota') %>%
+  pull(unique(name))
+saveRDS(sporeformers_list, 'data/r_data/sporeformers_list.RDS')
 
-# Make OTUtable
-otutabSM = select(otutab_pre, 'Group' = 'Group.x', name, 'value' = 'value.x') %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  rbind(select(otutab_pre, 'Group' = 'Group.y', name, 'value' = 'value.yy') %>%
-          drop_na(Group) %>%
-          pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0)) %>%
-  column_to_rownames('Group')
-saveRDS(otutabSM, 'data/r_data/otutabSM.RDS')
-write.csv(as.data.frame(otutabSM) %>% rownames_to_column('Group'), 'data/csv_files/otutabSM_filt.csv', row.names = FALSE)
-## 
+firmicutes_microbiota = otu_long %>% filter(substr(Group, 1,1) == 'M' & !(name %in% sporeformers_list)) %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(Phylum == 'Firmicutes') %>%
+  pull(unique(name))
+saveRDS(firmicutes_microbiota, 'data/r_data/firmicutes_microbiota.RDS')
+
+# Microbiota - sporobiota! 
+nonsporeformers_list = otu_long %>% filter(substr(Group, 1,1) == 'M' & !(name %in% sporeformers_list)) %>%
+  pull(unique(name))
+saveRDS(nonsporeformers_list, 'data/r_data/nonsporeformers_list.RDS')
+
 # Phylogenetic analysis 
 # Load tree file from mafft 
 tree_pre = ape::read.tree('data/phylo_analysis/fasttree_mafft_align.tree')
@@ -174,7 +183,7 @@ seq_metadata = read.csv('data/metadata.csv', sep=';') %>%
 
 # Make sure that sequences that we filtered are removed from the tree as well 
 tree = ape::drop.tip(phy=tree_pre, 
-                tip=setdiff(tree_pre$tip.label, colnames(seqtab)))
+                     tip=setdiff(tree_pre$tip.label, colnames(seqtab)))
 
 saveRDS(seqtab, 'data/r_data/seqtab.RDS')
 saveRDS(seq_taxtab, 'data/r_data/seq_taxtab.RDS')
@@ -195,5 +204,7 @@ rm(min_seqs_per_otu)
 rm(otu_names)
 rm(reads_per_sample)
 
-# Data saved in data/r_data as RDS objects
-# and as basic_data.R (enviroment)
+# Data saved in data/r_data as RDS objects & as basic_data.R (enviroment)
+
+save.image('data/r_data/basic_data.R')
+
