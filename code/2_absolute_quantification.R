@@ -46,7 +46,7 @@ plates_e = read.quantasoft('data/absolute_quantification/original_files/20240513
   rbind(read.quantasoft('data/absolute_quantification/original_files/20240513_ddPCR_v3v4_sporobiota_2_results.csv')) %>%
   filter(AcceptedDroplets > 10000 & Positives > 1) %>%
   # Exclude from analysis because the amount of DNA was insufficient SB008, SB009, SE002, SE003, SF001, SF009, SH007, SC013
-  filter(Sample %in% c('SB008', 'SB009', 'SE002', 'SE003', 'SF001', 'SF009', 'SH007', 'SC013'))
+  filter(!(Sample %in% c('SB008', 'SB009', 'SE002', 'SE003', 'SF001', 'SF009', 'SH007', 'SC013')))
 
 sample = read.quantasoft('data/absolute_quantification/original_files/MA001.csv') 
 
@@ -76,8 +76,8 @@ otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   ungroup() %>%
   left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
   mutate(norm_abund = rel_abund*copies) %>%
-  filter(!is.na(Well)) %>%
-  select(Group, name, value, rel_abund, norm_abund)
+  select(Group, name, value, rel_abund, norm_abund) %>%
+  filter(!is.na(norm_abund))
 
-saveRDS( otutab_absrel, 'data/r_data/otutab_absabund.RDS')
+saveRDS( otutab_absrel, 'data/r_data/otutab_absrel.RDS')
 
