@@ -8,16 +8,25 @@ library(tidyverse)
 library(vegan)
 library(ape)
 library(ggpubr)
+library(scales)
 library(phyloseq)
 
 set.seed(96)
 theme_set(theme_bw())
-load("~/projects/longitudinal_amplicons/data/r_data/basic_data.RData")
+
+otutabEM = readRDS('data/r_data/otutabEM.RDS')
+metadata = readRDS('data/r_data/metadata.RDS')
+taxtab = readRDS('data/r_data/taxonomy.RDS')
+
+seqtab = readRDS('data/r_data/seqtab.RDS')
+seq_metadata = readRDS('data/r_data/seq_metadata.RDS')
+seq_taxtab = readRDS('data/r_data/seq_taxtab.RDS')
+tree = readRDS('data/r_data/tree.RDS')
 
 # Colors 
-cole=c('#47B66A') # yellow
+cole=c('#128ede') # blue
 colm=c('#D9A534') # green
-colem= c('#47B66A', '#D9A534')
+colem= c('#128ede', '#D9A534')
 
 # Bray-Curtis
 # Beta divrsity measures have to be calculated for each fraction seperatly! 
@@ -37,22 +46,33 @@ dist_bray = as.matrix(distM_bray) %>%
   filter(Group != name) %>%
   left_join(metadata %>% select(Group, person, day), by='Group') %>%
   left_join(metadata %>% select(Group, person, day), by=join_by('name' == 'Group')) %>%
-  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol_resistant_fraction'), 
-         same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual') )
+  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol resistant fraction'), 
+         same_person= ifelse(person.x==person.y, 'Within individual', 'Between individuals') )
 
-ggplot(dist_bray, aes(x=biota, y=value, fill=same_person)) +
+# Statistics 
+within <- dist_bray %>%
+  filter(same_person == "Within individual")
+wilcox_within <- wilcox.test(value ~ biota, data = within)
+
+between = dist_bray %>%
+  filter(same_person == "Between individuals")
+wilcox_between <- wilcox.test(value ~ biota, data = between)
+
+# Plot
+ggplot(dist_bray, aes(x=same_person, y=value, fill=biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colem) +
-  stat_compare_means(aes(group=paste0(biota, same_person)), 
-                     method = 'anova') +
-  labs(y='Bray-Curtis distance', x='', fill='Intra/Inter individual?')
-ggsave('out/ethanol_resistantVSmicrobiota/braycurtis_boxplot.png', dpi=600)
+  annotate("text", x=1, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_within$p.value)), size=3, color='black') +
+  annotate("text", x=2, y=1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_between$p.value)), size=3, color="black") +
+  labs(y='Bray-Curtis distance', x='', fill='')
+
+ggsave('out/submission/braycurtis_boxplot.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
 # Normalized distances of each individual 
 dist_bray_norm = dist_bray %>%
-  filter(same_person == 'Same individual') %>%
+  filter(same_person == 'Within individual') %>%
   group_by(person.x, biota) %>%
   # z-score normalization 
   mutate(z_norm_value = ((value-mean(value)/sd(value))), 
@@ -63,22 +83,23 @@ z_score_plot = dist_bray_norm %>%
   ggplot(aes(x=biota, y=z_norm_value, fill=biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colem) +
-  stat_compare_means(method = 'anova') +
-  labs(x='', y='Bray-Curtis distances (Z-score normalized)', fill='Fraction') +
+  annotate("text", x=1.5, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox.test(z_norm_value  ~ biota, data = dist_bray_norm)$p.value)), size=3, color='black') +
+  labs(x='', y='Bray-Curtis distances (Z-score normalized)', fill='Sample type') +
   theme(axis.text.x = element_blank()) 
 
 minmax_plot = dist_bray_norm %>%
   ggplot(aes(x=biota, y=min_max_norm, fill=biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colem) +
-  stat_compare_means(method = 'anova') +
-  labs(x='', y='Bray-Curtis distances (min-max normalized)', fill='Fraction') +
+  annotate("text", x=1.5, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox.test(min_max_norm  ~ biota, data = dist_bray_norm)$p.value)), size=3, color='black') +
+  labs(x='', y='Bray-Curtis distances (min-max normalized)', fill='Sample type') +
   theme(axis.text.x = element_blank()) 
 
 ggarrange(z_score_plot, minmax_plot, 
           common.legend = TRUE, 
           legend = 'right')
-ggsave('out/ethanol_resistantVSmicrobiota/braycurtis_boxplot_normalized.png', dpi=600)
+ggsave('out/submission/braycurtis_norm_boxplot.png', width = 20, height = 20, units = 'cm', dpi = 600)
+
 
 # NMDS plot
 nmds_bcM = metaMDS(distM_bray)
@@ -93,7 +114,7 @@ nmds_positionsM %>%
   #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
   scale_size_continuous(range = c(3,6)) +
   labs(x='', y='', color='Individual')
-ggsave('out/ethanol_resistantVSmicrobiota/bracurtis_microbiota_nmds.png', dpi=600)
+ggsave('out/submission/braycurtis_nmds_M.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # Ethanol resistant fraction 
 nmds_bcE = metaMDS(distE_bray)
@@ -108,7 +129,8 @@ nmds_positionsE %>%
   #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
   scale_size_continuous(range = c(3,6)) +
   labs(x='', y='', color='Individual') 
-ggsave('out/ethanol_resistantVSmicrobiota/bracurtis_ethanol_resistant_nmds.png', dpi=600)
+
+ggsave('out/submission/braycurtis_nmds_E.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # Jaccard
 # Beta divrsity measures have to be calculated for each fraction seperatly! 
@@ -125,22 +147,32 @@ dist_jaccard = as.matrix(distM_jaccard) %>%
   filter(Group != name) %>%
   left_join(metadata %>% select(Group, person, date), by='Group') %>%
   left_join(metadata %>% select(Group, person, date), by=join_by('name' == 'Group')) %>%
-  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol_resistant_fraction'), 
-         same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual') )
+  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol resistant fraction'), 
+         same_person= ifelse(person.x==person.y, 'Within individual', 'Between individuals') )
 
-ggplot(dist_jaccard, aes(x=biota, y=value, fill=same_person)) +
+# Statistics 
+within <- dist_jaccard %>%
+  filter(same_person == "Within individual")
+wilcox_within <- wilcox.test(value ~ biota, data = within)
+
+between = dist_jaccard %>%
+  filter(same_person == "Between individuals")
+wilcox_between <- wilcox.test(value ~ biota, data = between)
+
+# Plot
+ggplot(dist_jaccard, aes(x=same_person, y=value, fill=biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colem) +
-  stat_compare_means(aes(group=paste0(same_person, biota)), 
-                     method = 'anova') +
-  labs(y="Jaccard distance", x="", fill='Intra/Inter individual?')
-ggsave('out/ethanol_resistantVSmicrobiota/jaccard_boxplot.png', dpi = 600)
+  annotate("text", x=1, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_within$p.value)), size=3, color='black') +
+  annotate("text", x=2, y=1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_between$p.value)), size=3, color="black") +
+  labs(y='Jaccard distance', x='', fill='')
+ggsave('out/submission/jaccard_boxplot.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
 # Normalized distances of each individual 
 dist_jaccard_norm = dist_jaccard %>%
-  filter(same_person == 'Same individual') %>%
+  filter(same_person == 'Within individual') %>%
   group_by(person.x, biota) %>%
   # z-score normalization 
   mutate(z_norm_value = ((value-mean(value)/sd(value))), 
@@ -151,22 +183,22 @@ z_score_plot = dist_jaccard_norm %>%
   ggplot(aes(x=biota, y=z_norm_value, fill=biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colem) +
-  stat_compare_means(method = 'anova') +
-  labs(x='', y='Jaccard distances (Z-score normalized)', fill='Fraction') +
+  annotate("text", x=1.5, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox.test(z_norm_value   ~ biota, data = dist_jaccard_norm)$p.value)), size=3, color='black') +
+  labs(x='', y='Jaccard distances (Z-score normalized)', fill='Sample type') +
   theme(axis.text.x = element_blank()) 
 
 minmax_plot = dist_jaccard_norm %>%
   ggplot(aes(x=biota, y=min_max_norm, fill=biota)) +
   geom_boxplot() +
   scale_fill_manual(values = colem) +
-  stat_compare_means(method = 'anova') +
-  labs(x='', y='Jaccard distances (min-max normalized)', fill='Fraction') +
+  annotate("text", x=1.5, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox.test(min_max_norm   ~ biota, data = dist_jaccard_norm)$p.value)), size=3, color='black') +
+  labs(x='', y='Jaccard distances (min-max normalized)', fill='Sample type') +
   theme(axis.text.x = element_blank())
 
 ggarrange(z_score_plot, minmax_plot, 
           common.legend = TRUE, 
           legend = 'right')
-ggsave('out/ethanol_resistantVSmicrobiota/jaccard_boxplot_normalized.png', dpi=600)
+ggsave('out/submission//jaccard_boxplot_normalized.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # NMDS
 nmds_jaccardM = metaMDS(distM_jaccard)
@@ -179,14 +211,14 @@ nmds_positionsM %>%
   ggplot(aes(x=NMDS1, y=NMDS2, color=person)) +
   geom_point(size=3) +
   labs(x='', y='', color='Individual') 
-ggsave('out/ethanol_resistantVSmicrobiota/jaccard_microbiota_nmds.png', dpi=600)
+ggsave('out/submission/jaccard_nmds_M.png', width = 20, height = 20, units = 'cm', dpi=600)
 
 # Distance to centroid for each individual and both their samples of microbiota and sporobita; is there a greater distance to centroid for samples of extreme events?
 levels <- c("A", "B", "C", "D", "E", "F", "G", "H", "I")
 
 unique(dist_jaccard$name)
 repetitionsM <- dist_jaccard %>% filter(biota == 'Microbiota') %>% group_by(person.x) %>% summarise(n = n_distinct(Group)) %>% pull(n)
-repetitionsE <- dist_jaccard %>% filter(biota == 'Ethanol_resistant_fraction') %>% group_by(person.x) %>% summarise(n = n_distinct(Group)) %>% pull(n)
+repetitionsE <- dist_jaccard %>% filter(biota == 'Ethanol resistant fraction') %>% group_by(person.x) %>% summarise(n = n_distinct(Group)) %>% pull(n)
 groupsM = factor(rep(levels, times = repetitionsM), levels = levels)
 groupsE = factor(rep(levels, times = repetitionsE), levels = levels)
 
@@ -208,16 +240,14 @@ dist_centorid %>%
   ggplot(aes(x=person, y=dist2centorid)) +
   geom_boxplot(mapping = aes(color = biota), outlier.shape = 8, linewidth = 1) +
   scale_color_manual(values = colem) +
-  stat_compare_means() +
   labs(x='', y = 'Jaccard distances to centroid')
-ggsave('out/ethanol_resistantVSmicrobiota/jaccard_individual_dist2centroid.png', dpi=600)
 
 # Distances between samples x days appart 
 # Calculate if there is a difference in the distance between samples of individuals if they were sampled, 
 # closer together and more appart between microbiota and EtOH fraction 
 dist_time = dist_jaccard %>%
   # Filter different individuals 
-  filter(same_person == 'Same individual') %>%
+  filter(same_person == 'Within individual') %>%
   # Calculate the difference between sampling times
   mutate(diff=abs(date.x-date.y)) %>%
   # group by difference between days and person
@@ -229,29 +259,28 @@ dist_time %>%
   ggplot(aes(x=diff, y=median, color=biota)) +
   geom_point() +
   scale_color_manual(values=colem) +
-  geom_smooth(#aes(group=person.x), 
-    method = 'lm') +
+  geom_smooth(method = 'lm') +
   stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
-  #facet_grid(~biota) +
-  labs(x='Days between sampling points', y='Median Jaccard distance', color='Fraction')
-ggsave('out/ethanol_resistantVSmicrobiota/jaccard_time.png', dpi=600)
+  labs(x='Days between sampling points', y='Median Jaccard distance', color='Sample type')
+
+ggsave('out/submission//jaccard_time.png', dpi=600)
 
 # Pearsons correlation between median of distance between samples and time 
 dist_timeM = filter(dist_time, biota == 'Microbiota')
 cor.test(as.numeric(dist_timeM$diff), dist_timeM$median, method='pearson') 
 # Negative correlation -0.03, not significant 
-dist_timeE = filter(dist_time, biota == 'Ethanol_resistant_fraction')
+dist_timeE = filter(dist_time, biota == 'Ethanol resistant fraction')
 cor.test(as.numeric(dist_timeE$diff), dist_timeE$median, method='pearson') 
 # Negative correlation -0.03, not significant! 
 
-##
-# UniFrac 
+
+## UniFrac
 ps = phyloseq(otu_table(as.matrix(seqtab), taxa_are_rows = FALSE), 
               sample_data(seq_metadata %>% column_to_rownames('Group')), 
               tax_table(as.matrix(seq_taxtab)), 
               phy_tree(tree))
 
-# Weighted
+# weighted UniFrac 
 unifrac_w = UniFrac(ps, weighted = TRUE, normalized = FALSE)
 
 pcoa = cmdscale(unifrac_w, k=10, eig=TRUE, add=TRUE)
@@ -265,20 +294,12 @@ positions %>%
   left_join(metadata, by='Group') %>%
   ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
   geom_point(size=4) +
-  #scale_color_manual(values = colsm) + 
   labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
-       y=paste0(round(percent_explained[2], digits = 1), '%'), 
-       color = 'Individual') 
-ggsave('out/ethanol_resistantVSmicrobiota/PCOA_weighted.png', dpi=600)
+       y=paste0(round(percent_explained[2], digits = 1), '%'), color = 'Individual')
 
-# PCoA only explains in 2 axis 30% of variation of my data 
+# PCoA only explains in 2 axis ~30% of variation of data 
+ggsave('out/submission/weightedUnifrac_PCOA.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
-# Distance to centroid for each individual 
-rownames_to_column(as.data.frame(positions), 'Group') %>%
-  left_join(metadata, by='Group') %>%
-  as_tibble() %>% 
-  group_by(biota, person) %>%
-  reframe(centroid = mean(pcoa1))
 # Calculate if there is a difference in the distance between samples of individuals if they were; 
 # sampled closer together and more appart between microbiota and ethanol resistant fraction 
 unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
@@ -288,20 +309,38 @@ unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
   left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
   left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
   # Filter so that I have only inter-person comparisons!
-  mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
          which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
                              ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
   filter(which_biota != 'Both')
 
 unifracW_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   geom_boxplot() +
-  scale_fill_manual(values = colem) +
-  stat_compare_means(aes(group=paste0(same_person, which_biota))) +
-  labs(y="weighted UniFrac distance", x="", fill='Type of sample')
-ggsave('out/ethanol_resistantVSmicrobiota/weighted_boxplot.png', dpi=600)
+  #scale_fill_manual(values = )
+  labs(y="weighted UniFrac distance", x="", fill='Sample type')
 
-# PCoA unweighted 
-unifrac_u = UniFrac(ps, weighted = FALSE)
+ggsave('out/submission/weightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
+
+# weighted UniFrac through time 
+diff_timeW = unifracW_df %>%
+  # Filter different individuals 
+  filter(same_person == 'Within individual') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=as.integer(abs(date.x-date.y))) %>%
+  # group by difference between days and person
+  group_by(which_biota, person.x, diff) %>%
+  summarise(median=median(value), .groups = 'drop')
+
+ggplot(diff_timeW, aes(x=diff, y=median, color=which_biota)) +
+  geom_point() +
+  #scale_color_manual(values=) +
+  geom_smooth(method = 'lm') +
+  labs(x='Days between sampling points', y='Median weighted UniFrac distance', color='Sample type')
+ggsave('out/submission/weightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
+
+
+# unweighted UniFrac
+unifrac_u = UniFrac(ps, weighted = FALSE, normalized = FALSE)
 pcoa = cmdscale(unifrac_u, k=2, eig=TRUE, add=TRUE)
 positions = pcoa$points
 colnames(positions) <- c('pcoa1', 'pcoa2')
@@ -316,7 +355,8 @@ positions %>%
   labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
        y=paste0(round(percent_explained[2], digits = 1), '%'), 
        color = 'Individual') 
-ggsave('out/ethanol_resistantVSmicrobiota/PCOA_unweighted.png', dpi=600)
+
+ggsave('out/submission/unweightedUnifrac_PCOA.png', width = 20, height = 20, units = 'cm', dpi = 600)
 # PCoA only explains in 2 axis ~30% of variation of my data 
 
 # 
@@ -327,24 +367,20 @@ unifracU_df = as.data.frame(as.matrix(unifrac_u)) %>%
   left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
   left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
   # Filter so that I have only inter-person comparisons!
-  mutate(same_person= ifelse(person.x==person.y, 'Same individual', 'Different individual'), 
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
          which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
                              ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
   filter(which_biota != 'Both')
 
 unifracU_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   geom_boxplot() +
-  #geom_violin(draw_quantiles = c(0.5)) +
-  scale_fill_manual(values = colem) +
-  #geom_point(size=0.5, alpha=0.3) +
-  stat_compare_means(aes(group=paste0(same_person, which_biota))) +
-  labs(y="unweighted UniFrac distance", x="", fill='Fraction')
-ggsave('out/ethanol_resistantVSmicrobiota/unweighted_boxplot.png', dpi=600)
+  labs(y="unweighted UniFrac distance", x="", fill='Sample type')
+ggsave('out/submission/unweightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
-# UniFrac through time 
+# unweighted UniFrac through time 
 diff_timeU = unifracU_df %>%
   # Filter different individuals 
-  filter(same_person == 'Same individual') %>%
+  filter(same_person == 'Within individual') %>%
   # Calculate the difference between sampling times
   mutate(diff=as.integer(abs(date.x-date.y))) %>%
   # group by difference between days and person
@@ -353,18 +389,17 @@ diff_timeU = unifracU_df %>%
 
 ggplot(diff_timeU, aes(x=diff, y=median, color=which_biota)) +
   geom_point() +
-  scale_color_manual(values=colem) +
+  #scale_color_manual(values=) +
   geom_smooth(method = 'lm') +
-  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
-  labs(x='Days between sampling points', y='Median unweighted UniFrac distance', color='Fraction')
+  labs(x='Days between sampling points', y='Median unweighted UniFrac distance', color='Sample type')
 
-ggsave('out/ethanol_resistantVSmicrobiota/unweighted_time.png', dpi=600)
+ggsave('out/submission/unweightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
 # What if distances were normalized for each individual? 
 dist_unweighted_norm = unifracU_df %>%
-  filter(same_person == 'Same individual') %>%
+  filter(same_person == 'Within individual') %>%
   group_by(person.x, which_biota) %>%
-          
+  
   mutate(# z-score normalization 
     z_norm_value = ((value-mean(value)/sd(value))), 
     # max-min normalization
@@ -387,32 +422,122 @@ dist_unweighted_norm_time %>%
   ggplot(aes(x=diff, y=median, color=which_biota)) +
   geom_point() +
   geom_smooth(method = 'lm', se = FALSE) +
-  scale_color_manual(values=colem) +
+  #scale_color_manual(values=) +
   annotate("text", x = Inf, y = Inf, label = paste0("R = ", round(corM$estimate, 2), "  p = ", round(corM$p.value, digits = 6)), 
-           hjust = 1.1, vjust = 2, color = colm) +
+           hjust = 1.1, vjust = 2) +
   annotate("text", x = Inf, y = Inf, label = paste0("R = ", round(corE$estimate, 2), "  p = ", round(corE$p.value, digits = 4)),  
-           hjust = 1.1, vjust = 4, color = cole) +
+           hjust = 1.1, vjust = 4) +
   #stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
-  labs(x='Days between sampling points', y='Median min-max normalized unweighted UniFrac distance', color='Fraction')
-ggsave('out/ethanol_resistantVSmicrobiota/unweighted_time_minmax_normlaized.png', dpi=600)
+  labs(x='Days between sampling points', y='Median min-max normalized unweighted UniFrac distance', color='Sample type')
 
-# What if distances were normalized based on biota? 
-distU_normal = unifracU_df %>%
-  group_by(which_biota, person.x, person.y) %>%
-  mutate(z_norm_value = ((value-mean(value)/sd(value))), 
-         min_max_norm = (value - min(value))/(max(value) - min(value)))
+ggsave('out/submission/unweightedUnifrac_minmax_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
-# difference between fractions and same/different individual
-distU_normal %>%
-  ggplot(aes(x=same_person, y=min_max_norm, fill=which_biota)) +
+# unweighted UniFrac boxplot for 
+# microbiota & ethanol resistant fraction 
+# Only Firmicutes & microbiota and ethnol resistant fraction
+# Sporobiota & microbiota - sporobiota 
+
+# 1 Already done above microbiota & ethanol resistant fraction 
+
+
+# 2 Only sporobiota and microbiota with sporeformers removed!  
+seq_long = rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
+  pivot_longer(cols = starts_with('V')) %>%
+  left_join(metadata %>% select(original_sample, Group, person), by = 'Group')
+
+seq_sporeformers <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                              seq_long %>% filter(substr(Group, 1, 1) == 'S'), by = join_by('name', 'original_sample', 'person')) %>%
+  left_join(seq_taxtab %>% rownames_to_column('name'), by = 'name') %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(biota = ifelse(value.x > 5 & value.y > 10 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
+  filter(biota == 'Sporobiota') %>%
+  pull(unique(name))
+
+seq_spore = filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% seq_sporeformers)) %>%
+  rbind(filter(seq_long, substr(Group, 1, 1) == 'S' & name %in% seq_sporeformers))
+
+spore_tab = select(seq_spore, Group, name, value) %>%
+  pivot_wider(names_from = 'name', values_from = 'value') %>%
+  column_to_rownames('Group')
+
+meta_spore = seq_metadata %>% filter(Group %in% seq_spore$Group)
+tax_spore = seq_taxtab %>% rownames_to_column('name') %>% filter(name %in% seq_spore$name)
+tree_spore = ape::drop.tip(phy=tree, 
+                           tip=setdiff(tree$tip.label, seq_spore$name))
+
+ps_spore = phyloseq(otu_table(as.matrix(spore_tab), taxa_are_rows = FALSE), 
+                    sample_data(meta_spore %>% column_to_rownames('Group')), 
+                    tax_table(as.matrix(tax_spore %>% column_to_rownames('name'))), 
+                    phy_tree(tree_spore))
+
+unifrac_spore = UniFrac(ps_spore, weighted = FALSE, normalized = FALSE)
+spore_df = as.data.frame(as.matrix(unifrac_spore)) %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Non-sporeforming OTUs',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Sporeforming OTUs', 'Both'))) %>%
+  filter(which_biota != 'Both')
+
+spore_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   geom_boxplot() +
-  scale_fill_manual(values = colem) +
-  #geom_point(size=0.5, alpha=0.3) +
-  stat_compare_means(aes(group=paste0(same_person, which_biota))) +
-  labs(y="unweighted UniFrac distance", x="", fill='Fraction')
+  labs(y="unweighted UniFrac distance", x="", fill='')
 
-dist_unweighted_norm_time = dist_unweighted_norm %>%
-  mutate(diff=as.integer(abs(date.x-date.y))) %>%
-  group_by(which_biota, person.x, diff) %>%
-  summarise(median=median(min_max_norm), sd= sd(min_max_norm)) %>%
-  ungroup() 
+# 3 Only Firicutes!
+seq_firmicutes = seq_long %>% left_join(seq_taxtab %>% rownames_to_column('name'), by ='name') %>%
+  filter(Phylum == 'Firmicutes')
+
+seq_f = filter(seq_firmicutes, substr(Group, 1, 1) == 'M' & !(name %in% seq_sporeformers)) %>%
+  rbind(filter(seq_firmicutes, substr(Group, 1, 1) == 'S' & name %in% seq_sporeformers))
+
+firmicutes_tab = select(seq_f, Group, name, value) %>%
+  pivot_wider(names_from = 'name', values_from = 'value') %>%
+  column_to_rownames('Group')
+
+meta_f = seq_metadata %>% filter(Group %in% seq_f$Group)
+tax_f = seq_taxtab %>% rownames_to_column('name') %>% filter(name %in% seq_f$name)
+tree_f = ape::drop.tip(phy=tree, 
+                       tip=setdiff(tree$tip.label, seq_f$name))
+
+ps_f = phyloseq(otu_table(as.matrix(firmicutes_tab), taxa_are_rows = FALSE), 
+                sample_data(meta_f %>% column_to_rownames('Group')), 
+                tax_table(as.matrix(tax_f %>% column_to_rownames('name'))), 
+                phy_tree(tree_f))
+
+unifrac_f = UniFrac(ps_f, weighted = FALSE, normalized = FALSE)
+
+# 
+firmicutes_df = as.data.frame(as.matrix(unifrac_f)) %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Non-sporeforming Bacillota',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Sporeforming Bacillota', 'Both'))) %>%
+  filter(which_biota != 'Both')
+
+firmicutes_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
+  geom_boxplot() +
+  labs(y="unweighted UniFrac distance", x="", fill='')
+
+# Combine and plot 
+unifrac_all = unifracU_df %>% 
+  rbind(spore_df) %>%
+  rbind(firmicutes_df) 
+
+unifrac_all <- unifrac_all %>%
+  filter(which_biota != 'Sporeforming Bacillota')
+
+unifrac_all$which_biota <- factor(unifrac_all$which_biota, levels = c("Microbiota", "Non-sporeforming OTUs", "Non-sporeforming Bacillota", "Ethanol resistant fraction", 'Sporeforming OTUs'))
+
+unifrac_all %>% 
+  ggplot(aes(x=same_person, y=value, fill=which_biota)) +
+  geom_boxplot() +
+  labs(y="unweighted UniFrac distance", x="", fill='')
+ggsave('out/submission/unweighted_boxplot_all.png', width = 20, height = 18, units = 'cm', dpi=600)
+
