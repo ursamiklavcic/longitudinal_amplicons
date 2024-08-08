@@ -10,13 +10,14 @@ library(ape)
 library(ggpubr)
 library(scales)
 library(phyloseq)
+library(GUniFrac)
 
 set.seed(96)
 theme_set(theme_bw())
 
 otutabEM = readRDS('data/r_data/otutabEM.RDS')
 metadata = readRDS('data/r_data/metadata.RDS')
-taxtab = readRDS('data/r_data/taxonomy.RDS')
+taxtab = readRDS('data/r_data/taxtab.RDS')
 
 seqtab = readRDS('data/r_data/seqtab.RDS')
 seq_metadata = readRDS('data/r_data/seq_metadata.RDS')
@@ -29,25 +30,82 @@ colm=c('#D9A534') # green
 colem= c('#128ede', '#D9A534')
 
 # Bray-Curtis
-# Beta divrsity measures have to be calculated for each fraction seperatly! 
+# 1 Already done above microbiota & ethanol resistant fraction 
 otutabM = otutabEM[grep('^M', rownames(otutabEM), value = TRUE), ]
 otutabE = otutabEM[grep('^S', rownames(otutabEM), value = TRUE), ]
 
+# 2 Only sporobiota and microbiota with sporeformers removed!  
+otu_long = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
+  pivot_longer(cols = starts_with('Otu')) %>%
+  left_join(metadata %>% select(original_sample, Group, person), by = 'Group')
+
+otu_sporeformers <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                              otu_long %>% filter(substr(Group, 1, 1) == 'S'), by = join_by('name', 'original_sample', 'person')) %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(biota = ifelse(value.x > 5 & value.y > 10 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
+  filter(biota == 'Sporobiota') %>%
+  pull(unique(name))
+
+nonsporeOTU_tab = filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_sporeformers)) %>%
+  select(Group, name, value) %>% 
+  pivot_wider(values_fill = 0) %>%
+  column_to_rownames('Group')
+
+# 3 Only Firicutes!
+otu_firmicutes = otu_long %>% left_join(taxtab, by ='name') %>%
+  filter(Phylum == 'Firmicutes')
+
+bacilota_nonspore = filter(otu_firmicutes, substr(Group, 1, 1) == 'M' & !(name %in% otu_sporeformers)) %>%
+  select(Group, name, value) %>%
+  pivot_wider(values_fill = 0) %>%
+  column_to_rownames('Group')
+
+bacillota_spore = filter(otu_firmicutes, substr(Group, 1, 1) == 'S' & name %in% otu_sporeformers) %>%
+  select(Group, name, value) %>%
+  pivot_wider(values_fill = 0) %>%
+  column_to_rownames('Group')
+
+# Beta divrsity measures have to be calculated for each fraction seperatly! 
 distM_bray = vegdist(otutabM, method = 'bray')
 distE_bray = vegdist(otutabE, method = 'bray')
+distNS_bray = vegdist(nonsporeOTU_tab, method = 'bray')
+distBNS_bray = vegdist(bacilota_nonspore, method = 'bray')
+distBS_bray = vegdist(bacillota_spore, method = 'bray')
+
 
 dist_bray = as.matrix(distM_bray) %>% 
   as_tibble(rownames= 'Group') %>%
   pivot_longer(-Group) %>%
+  mutate( type = 'Microbiota') %>%
   rbind(as.matrix(distE_bray) %>% 
           as_tibble(rownames= 'Group') %>%
-          pivot_longer(-Group)) %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Ethanol resistant fraction')) %>%
+  rbind(as.matrix(distNS_bray) %>% 
+          as_tibble(rownames= 'Group') %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Non-sporeforming OTUs')) %>%
+  rbind(as.matrix(distBNS_bray) %>% 
+          as_tibble(rownames= 'Group') %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Non-sporeforming Bacillota')) %>%
+  rbind(as.matrix(distBS_bray) %>% 
+          as_tibble(rownames= 'Group') %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Sporeforming OTUs')) %>%
   # Remove the distances of the same sample 
   filter(Group != name) %>%
   left_join(metadata %>% select(Group, person, day), by='Group') %>%
   left_join(metadata %>% select(Group, person, day), by=join_by('name' == 'Group')) %>%
-  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol resistant fraction'), 
-         same_person= ifelse(person.x==person.y, 'Within individual', 'Between individuals') )
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individuals') )
+
+dist_bray$type <- factor(dist_bray$type , levels = c("Microbiota", "Non-sporeforming OTUs", "Non-sporeforming Bacillota", "Ethanol resistant fraction", 'Sporeforming OTUs'))
+
+ggplot(dist_bray, aes(x=same_person, y=value, fill=type)) +
+  geom_boxplot() +
+  labs(y='Bray-Curtis distance', x='', fill='')
+ggsave('out/exploration/bray_boxplot_all.png', width = 20, height = 20, dpi= 600)
 
 # Statistics 
 within <- dist_bray %>%
@@ -57,16 +115,6 @@ wilcox_within <- wilcox.test(value ~ biota, data = within)
 between = dist_bray %>%
   filter(same_person == "Between individuals")
 wilcox_between <- wilcox.test(value ~ biota, data = between)
-
-# Plot
-ggplot(dist_bray, aes(x=same_person, y=value, fill=biota)) +
-  geom_boxplot() +
-  scale_fill_manual(values = colem) +
-  annotate("text", x=1, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_within$p.value)), size=3, color='black') +
-  annotate("text", x=2, y=1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_between$p.value)), size=3, color="black") +
-  labs(y='Bray-Curtis distance', x='', fill='')
-
-ggsave('out/submission/braycurtis_boxplot.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
@@ -133,22 +181,45 @@ nmds_positionsE %>%
 ggsave('out/submission/braycurtis_nmds_E.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # Jaccard
-# Beta divrsity measures have to be calculated for each fraction seperatly! 
 distM_jaccard = vegdist(otutabM, method = 'jaccard')
 distE_jaccard = vegdist(otutabE, method = 'jaccard')
+distNS_jaccard = vegdist(nonsporeOTU_tab, method = 'jaccard')
+distBNS_jaccard = vegdist(bacilota_nonspore, method = 'jaccard')
+distBS_jaccard = vegdist(bacillota_spore, method = 'jaccard')
+
 
 dist_jaccard = as.matrix(distM_jaccard) %>% 
   as_tibble(rownames= 'Group') %>%
   pivot_longer(-Group) %>%
+  mutate( type = 'Microbiota') %>%
   rbind(as.matrix(distE_jaccard) %>% 
           as_tibble(rownames= 'Group') %>%
-          pivot_longer(-Group)) %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Ethanol resistant fraction')) %>%
+  rbind(as.matrix(distNS_jaccard) %>% 
+          as_tibble(rownames= 'Group') %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Non-sporeforming OTUs')) %>%
+  rbind(as.matrix(distBNS_jaccard) %>% 
+          as_tibble(rownames= 'Group') %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Non-sporeforming Bacillota')) %>%
+  rbind(as.matrix(distBS_jaccard) %>% 
+          as_tibble(rownames= 'Group') %>%
+          pivot_longer(-Group) %>%
+          mutate( type = 'Sporeforming OTUs')) %>%
   # Remove the distances of the same sample 
   filter(Group != name) %>%
-  left_join(metadata %>% select(Group, person, date), by='Group') %>%
-  left_join(metadata %>% select(Group, person, date), by=join_by('name' == 'Group')) %>%
-  mutate(biota = ifelse(substr(Group, 1, 1) == 'M', 'Microbiota', 'Ethanol resistant fraction'), 
-         same_person= ifelse(person.x==person.y, 'Within individual', 'Between individuals') )
+  left_join(metadata %>% select(Group, person, day), by='Group') %>%
+  left_join(metadata %>% select(Group, person, day), by=join_by('name' == 'Group')) %>%
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individuals') )
+
+dist_jaccard$type <- factor(dist_jaccard$type , levels = c("Microbiota", "Non-sporeforming OTUs", "Non-sporeforming Bacillota", "Ethanol resistant fraction", 'Sporeforming OTUs'))
+
+ggplot(dist_jaccard, aes(x=same_person, y=value, fill=type)) +
+  geom_boxplot() +
+  labs(y='Jaccard distance', x='', fill='')
+ggsave('out/exploration/jaccard_boxplot_all.png', width = 20, height = 20, dpi= 600)
 
 # Statistics 
 within <- dist_jaccard %>%
@@ -158,15 +229,6 @@ wilcox_within <- wilcox.test(value ~ biota, data = within)
 between = dist_jaccard %>%
   filter(same_person == "Between individuals")
 wilcox_between <- wilcox.test(value ~ biota, data = between)
-
-# Plot
-ggplot(dist_jaccard, aes(x=same_person, y=value, fill=biota)) +
-  geom_boxplot() +
-  scale_fill_manual(values = colem) +
-  annotate("text", x=1, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_within$p.value)), size=3, color='black') +
-  annotate("text", x=2, y=1, label=paste("Mann-Whitney test p-value:", scientific(wilcox_between$p.value)), size=3, color="black") +
-  labs(y='Jaccard distance', x='', fill='')
-ggsave('out/submission/jaccard_boxplot.png', width = 20, height = 20, units = 'cm', dpi = 600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
@@ -279,65 +341,6 @@ ps = phyloseq(otu_table(as.matrix(seqtab), taxa_are_rows = FALSE),
               sample_data(seq_metadata %>% column_to_rownames('Group')), 
               tax_table(as.matrix(seq_taxtab)), 
               phy_tree(tree))
-
-# weighted UniFrac 
-unifrac_w = UniFrac(ps, weighted = TRUE, normalized = FALSE)
-
-pcoa = cmdscale(unifrac_w, k=10, eig=TRUE, add=TRUE)
-positions = pcoa$points
-colnames(positions) <- c('pcoa1', 'pcoa2', 'pcoa3', 'pcoa4', 'pcoa5', 'pcoa6', 'pcoa7', 'pcoa8', 'pcoa9', 'pcoa10')
-
-percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
-
-positions %>%
-  as_tibble(rownames = 'Group') %>%
-  left_join(metadata, by='Group') %>%
-  ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
-  geom_point(size=4) +
-  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
-       y=paste0(round(percent_explained[2], digits = 1), '%'), color = 'Individual')
-
-# PCoA only explains in 2 axis ~30% of variation of data 
-ggsave('out/submission/weightedUnifrac_PCOA.png', width = 20, height = 20, units = 'cm', dpi = 600)
-
-# Calculate if there is a difference in the distance between samples of individuals if they were; 
-# sampled closer together and more appart between microbiota and ethanol resistant fraction 
-unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
-  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
-  # Filter so that I have only inter-person comparisons!
-  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
-         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
-                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
-  filter(which_biota != 'Both')
-
-unifracW_df %>% ggplot(aes(x=same_person, y=value, fill=which_biota)) +
-  geom_boxplot() +
-  #scale_fill_manual(values = )
-  labs(y="weighted UniFrac distance", x="", fill='Sample type')
-
-ggsave('out/submission/weightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
-
-# weighted UniFrac through time 
-diff_timeW = unifracW_df %>%
-  # Filter different individuals 
-  filter(same_person == 'Within individual') %>%
-  # Calculate the difference between sampling times
-  mutate(diff=as.integer(abs(date.x-date.y))) %>%
-  # group by difference between days and person
-  group_by(which_biota, person.x, diff) %>%
-  summarise(median=median(value), .groups = 'drop')
-
-ggplot(diff_timeW, aes(x=diff, y=median, color=which_biota)) +
-  geom_point() +
-  #scale_color_manual(values=) +
-  geom_smooth(method = 'lm') +
-  labs(x='Days between sampling points', y='Median weighted UniFrac distance', color='Sample type')
-ggsave('out/submission/weightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
-
 
 # unweighted UniFrac
 unifrac_u = UniFrac(ps, weighted = FALSE, normalized = FALSE)
@@ -457,7 +460,7 @@ seq_spore = filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% seq_sporef
   rbind(filter(seq_long, substr(Group, 1, 1) == 'S' & name %in% seq_sporeformers))
 
 spore_tab = select(seq_spore, Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value') %>%
+  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
 meta_spore = seq_metadata %>% filter(Group %in% seq_spore$Group)
@@ -494,7 +497,7 @@ seq_f = filter(seq_firmicutes, substr(Group, 1, 1) == 'M' & !(name %in% seq_spor
   rbind(filter(seq_firmicutes, substr(Group, 1, 1) == 'S' & name %in% seq_sporeformers))
 
 firmicutes_tab = select(seq_f, Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value') %>%
+  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
 meta_f = seq_metadata %>% filter(Group %in% seq_f$Group)
@@ -535,9 +538,163 @@ unifrac_all <- unifrac_all %>%
 
 unifrac_all$which_biota <- factor(unifrac_all$which_biota, levels = c("Microbiota", "Non-sporeforming OTUs", "Non-sporeforming Bacillota", "Ethanol resistant fraction", 'Sporeforming OTUs'))
 
-unifrac_all %>% 
+unweighted_all = unifrac_all %>% 
   ggplot(aes(x=same_person, y=value, fill=which_biota)) +
   geom_boxplot() +
   labs(y="unweighted UniFrac distance", x="", fill='')
-ggsave('out/submission/unweighted_boxplot_all.png', width = 20, height = 18, units = 'cm', dpi=600)
+ggsave(weighted_all, 'out/submission/unweighted_boxplot_all.png', width = 20, height = 18, units = 'cm', dpi=600)
+
+###
+##
+# weighted UniFrac
+# 1 Microbiota & ethanol resistant fraction 
+
+unifrac_w = UniFrac(ps, weighted = TRUE)
+
+pcoa = cmdscale(unifrac_w, k=10, eig=TRUE, add=TRUE)
+positions = pcoa$points
+colnames(positions) <- c('pcoa1', 'pcoa2', 'pcoa3', 'pcoa4', 'pcoa5', 'pcoa6', 'pcoa7', 'pcoa8', 'pcoa9', 'pcoa10')
+
+percent_explained = 100 * pcoa$eig/ sum(pcoa$eig)
+
+positions %>%
+  as_tibble(rownames = 'Group') %>%
+  left_join(metadata, by='Group') %>%
+  ggplot(aes(x=pcoa1, y=pcoa2, color=person)) +
+  geom_point(size=4) +
+  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
+       y=paste0(round(percent_explained[2], digits = 1), '%'), color = 'Individual')
+
+# PCoA only explains in 2 axis ~30% of variation of data 
+ggsave('out/submission/weightedUnifrac_PCOA.png', width = 20, height = 20, units = 'cm', dpi = 600)
+
+# Calculate if there is a difference in the distance between samples of individuals if they were; 
+# sampled closer together and more appart between microbiota and ethanol resistant fraction 
+unifracW_df = as.data.frame(as.matrix(unifrac_w)) %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+  # Filter so that I have only inter-person comparisons!
+  mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         type= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
+  filter(type != 'Both')
+
+unifracW_df %>% ggplot(aes(x=where, y=value, fill=type)) +
+  geom_boxplot() +
+  #scale_fill_manual(values = )
+  labs(y="weighted UniFrac distance", x="", fill='Sample type')
+
+ggsave('out/submission/weightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
+
+# weighted UniFrac through time 
+diff_timeW = unifracW_df %>%
+  # Filter different individuals 
+  filter(where == 'Within individual') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=as.integer(abs(date.x-date.y))) %>%
+  # group by difference between days and person
+  group_by(type, person.x, diff) %>%
+  summarise(median=median(value), .groups = 'drop')
+
+ggplot(diff_timeW, aes(x=diff, y=median, color=type)) +
+  geom_point() +
+  #scale_color_manual(values=) +
+  geom_smooth(method = 'lm') +
+  labs(x='Days between sampling points', y='Median weighted UniFrac distance', color='Sample type')
+ggsave('out/submission/weightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
+
+
+# 2 Only sporobiota and microbiota with sporeformers removed!  
+unifracW_spore = UniFrac(ps_spore, weighted = TRUE)
+sporeW_df = as.data.frame(as.matrix(unifracW_spore)) %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+  mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         type= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Non-sporeforming OTUs',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Sporeforming OTUs', 'Both'))) %>%
+  filter(type != 'Both')
+
+sporeW_df %>% ggplot(aes(x=where, y=value, fill=type)) +
+  geom_boxplot() +
+  labs(y="weighted UniFrac distance", x="", fill='')
+
+# 3 Only Firicutes!
+unifracW_f = UniFrac(ps_f, weighted = TRUE)
+
+firmicutesW_df = as.data.frame(as.matrix(unifracW_f)) %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+  mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         type= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Non-sporeforming Bacillota',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Sporeforming OTUs', 'Both'))) %>%
+  filter(type != 'Both')
+
+firmicutesW_df %>% ggplot(aes(x=where, y=value, fill=type)) +
+  geom_boxplot() +
+  labs(y="weighted UniFrac distance", x="", fill='')
+
+# Combine and plot 
+unifrac_all = unifracW_df %>% 
+  rbind(sporeW_df) %>%
+  rbind(firmicutesW_df) 
+
+unifrac_all$type <- factor(unifrac_all$type, levels = c("Microbiota", "Non-sporeforming OTUs", "Non-sporeforming Bacillota", "Ethanol resistant fraction", 'Sporeforming OTUs', 'Sporeforming Bacillota'))
+
+weighted_all = unifrac_all %>% 
+  filter(type != 'Sporeforming Bacillota') %>%
+  ggplot(aes(x=where, y=value, fill=type)) +
+  geom_boxplot() +
+  labs(y="weighted UniFrac distance", x="", fill='')
+ggsave('out/submission/weighted_boxplot_all.png', width = 20, height = 18, units = 'cm', dpi=600)
+
+# Statistics EtOH VS Microbiota 
+# Within
+wilcox.test(filter(unifracW_df, type == 'Ethanol resistant fraction' & where == 'Within individual')$value, 
+            filter(unifracW_df, type == 'Microbiota' & where == 'Within individual')$value, paired = FALSE, conf.int = TRUE)
+# Between
+wilcox.test(filter(unifracW_df, type == 'Ethanol resistant fraction' & where == 'Between individual')$value, 
+            filter(unifracW_df, type == 'Microbiota' & where == 'Between individual')$value, paired = FALSE, conf.int = TRUE)
+
+# Statistics Non-sporeforming vs sporeforming OTUs 
+# Within
+wilcox.test(filter(sporeW_df, type == 'Sporeforming OTUs' & where == 'Within individual')$value, 
+            filter(sporeW_df, type == 'Non-sporeforming OTUs' & where == 'Within individual')$value, paired = FALSE, conf.int = TRUE)
+# Between
+wilcox.test(filter(sporeW_df, type == 'Sporeforming OTUs' & where == 'Between individual')$value, 
+            filter(sporeW_df, type == 'Non-sporeforming OTUs' & where == 'Between individual')$value, paired = FALSE, conf.int = TRUE)
+
+# Statistics for Bacillota non-sporeforming VS sporeforming 
+# Within
+wilcox.test(filter(firmicutesW_df, type == 'Sporeforming OTUs' & where == 'Within individual')$value, 
+            filter(firmicutesW_df, type == 'Non-sporeforming Bacillota' & where == 'Within individual')$value, paired = FALSE, conf.int = TRUE)
+# Between
+wilcox.test(filter(firmicutesW_df, type == 'Sporeforming OTUs' & where == 'Between individual')$value, 
+            filter(firmicutesW_df, type == 'Non-sporeforming Bacillota' & where == 'Between individual')$value, paired = FALSE, conf.int = TRUE)
+
+
+# Generalized UniFrac distances
+gUniFrac = GUniFrac(seqtab, tree=tree, size.factor = NULL, alpha = c(0, 0.5, 1), verbose = TRUE)$unifracs
+
+as.data.frame(gUniFrac[, , "d_0.5"]) %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
+                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
+  filter(which_biota != 'Both') %>%
+  ggplot(aes(x=same_person, y=value, fill=which_biota)) +
+  geom_boxplot() +
+  labs(y="generalized UniFrac distance", x="", fill='')
 
