@@ -607,58 +607,117 @@ ggplot(diff_timeW, aes(x=diff, y=median, color=type)) +
 ggsave('out/submission/weightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
 
-# 2 Only sporobiota and microbiota with sporeformers removed!  
-unifracW_spore = UniFrac(ps_spore, weighted = TRUE)
-sporeW_df = as.data.frame(as.matrix(unifracW_spore)) %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
-  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
+## Prepare the data 
+seq_long = rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
+  pivot_longer(cols = starts_with('V')) %>%
+  left_join(seq_metadata %>% select(original_sample, Group, person), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value)) %>%
+  ungroup() %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate( norm_abund = rel_abund * copies) %>%
+  select(Group, name, value, original_sample, person, norm_abund)
+
+seq_sporeformers <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                              seq_long %>% filter(substr(Group, 1, 1) == 'S'), by = join_by('name', 'original_sample', 'person')) %>%
+  left_join(seq_taxtab %>% rownames_to_column('name'), by = 'name') %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(biota = ifelse(norm_abund.x > 0 & norm_abund.y > 10 & norm_abund.y > norm_abund.x, 'Sporobiota', 'Microbiota')) %>%
+  # mutate(biota = ifelse(value.x > 5 & value.y > 10 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
+  filter(biota == 'Sporobiota') %>%
+  pull(unique(name))
+
+# Sporeforming OTUs
+micro <- filter(seq_long, substr(Group, 1, 1) == 'M')
+etoh <- filter(seq_long, substr(Group, 1, 1) == 'S')
+
+nonspore <- filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% seq_sporeformers))
+spore <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% seq_sporeformers)
+
+etoh_nonspore <- filter(seq_long, substr(Group, 1, 1) == 'S' & !(name %in% seq_sporeformers))
+
+bacillota_nonspore <- filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% seq_sporeformers)) %>% 
+  left_join(seq_taxtab %>% rownames_to_column('name'), by ='name') %>%
+  filter(Phylum == 'Firmicutes')
+
+#
+
+
+## weighted UniFrac
+generate_WUniFrac <- function(data, metadata, taxtab, tree) {
+  # Filter otutab
+  tab <- data %>%
+    select(Group, name, value) %>%
+    pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
+    column_to_rownames('Group')
+  
+  # Filter metadata
+  meta <- metadata %>%
+    filter(Group %in% data$Group)
+  
+  # Filter taxtab
+  tax <- taxtab %>%
+    rownames_to_column('name') %>%
+    filter(name %in% data$name)
+  
+  # Filter tree
+  tre <- ape::drop.tip(phy=tree, tip=setdiff(tree$tip.label, data$name))
+  
+  # Make phyloseq object 
+  ps <- phyloseq(otu_table(as.matrix(tab), taxa_are_rows = FALSE), 
+                 sample_data(meta %>% column_to_rownames('Group')), 
+                 tax_table(as.matrix(tax %>% column_to_rownames('name'))), 
+                 phy_tree(tre))
+  
+  # Calculate weighted UniFrac distances
+  unifrac = UniFrac(ps, weighted = TRUE)
+  
+  # Transform the UniFrac results into a meaningful table
+  wuni_df <- as.data.frame(as.matrix(unifrac)) %>%
+    rownames_to_column('Group') %>%
+    pivot_longer(-Group, names_to = "name", values_to = "value") %>%
+    filter(Group != name) %>%
+    left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+    left_join(metadata %>% select(Group, person, date, biota), by=c('name' = 'Group'))
+  
+  # Return all the generated objects as a list
+  return(wuni_df)
+}
+
+WUni_all = generate_WUniFrac(micro, seq_metadata, seq_taxtab, tree) %>%
   mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
-         type= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Non-sporeforming OTUs',
-                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Sporeforming OTUs', 'Both'))) %>%
-  filter(type != 'Both')
+         type= ifelse(biota.y == biota.x, 'Microbiota', '')) %>%
+  rbind(generate_WUniFrac(nonspore, seq_metadata, seq_taxtab, tree) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Microbiota without spore forming OTUs', ''))) %>%
+  rbind(generate_WUniFrac(bacillota_nonspore, seq_metadata, seq_taxtab, tree) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Non-spore forming Bacillota OTUs', ''))) %>%
+  rbind(generate_WUniFrac(etoh, seq_metadata, seq_taxtab, tree) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Ethanol resistant fraction', ''))) %>%
+  rbind(generate_WUniFrac(spore, seq_metadata, seq_taxtab, tree) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Spore forming OTUs', ''))) %>%
+  rbind(generate_WUniFrac(etoh_nonspore, seq_metadata, seq_taxtab, tree) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Ethanol resistant fraction without spore formign OTUs', '')))
 
-sporeW_df %>% ggplot(aes(x=where, y=value, fill=type)) +
-  geom_boxplot() +
-  labs(y="weighted UniFrac distance", x="", fill='')
-
-# 3 Only Firicutes!
-unifracW_f = UniFrac(ps_f, weighted = TRUE)
-
-firmicutesW_df = as.data.frame(as.matrix(unifracW_f)) %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
-  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
-  mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
-         type= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Non-sporeforming Bacillota',
-                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Sporeforming OTUs', 'Both'))) %>%
-  filter(type != 'Both')
-
-firmicutesW_df %>% ggplot(aes(x=where, y=value, fill=type)) +
-  geom_boxplot() +
-  labs(y="weighted UniFrac distance", x="", fill='')
-
-# Combine and plot 
-unifrac_all = unifracW_df %>% 
-  rbind(sporeW_df) %>%
-  rbind(firmicutesW_df) 
-
-unifrac_all$type <- factor(unifrac_all$type, levels = c("Microbiota", "Non-sporeforming OTUs", "Non-sporeforming Bacillota", "Ethanol resistant fraction", 'Sporeforming OTUs', 'Sporeforming Bacillota'))
-
-weighted_all = unifrac_all %>% 
-  filter(type != 'Sporeforming Bacillota') %>%
+WUni_all$type <- factor(WUni_all$type, levels = c('Microbiota', 'Microbiota without spore forming OTUs','Non-spore forming Bacillota OTUs',
+                                                  'Ethanol resistant fraction', 'Spore forming OTUs', 'Ethanol resistant fraction without spore formign OTUs'))
+WUni_all %>% 
   ggplot(aes(x=where, y=value, fill=type)) +
   geom_boxplot() +
-  labs(y="weighted UniFrac distance", x="", fill='')
-ggsave('out/submission/weighted_boxplot_all.png', width = 20, height = 18, units = 'cm', dpi=600)
+  labs(y="weighted UniFrac distance", x="", fill='') 
+
 
 # Statistics EtOH VS Microbiota 
+
+kruskal.test(filter(unifrac_all, where == 'Between individual')$value, filter(unifrac_all, where == 'Between individual')$type)
+kruskal.test(filter(unifrac_all, where == 'Within individual')$value, filter(unifrac_all, where == 'Within individual')$type)
+
 # Within
-wilcox.test(filter(unifracW_df, type == 'Ethanol resistant fraction' & where == 'Within individual')$value, 
+wilcox.test(filter(unifrac_all, type == 'Ethanol resistant fraction' & where == 'Within individual')$value, 
             filter(unifracW_df, type == 'Microbiota' & where == 'Within individual')$value, paired = FALSE, conf.int = TRUE)
 # Between
 wilcox.test(filter(unifracW_df, type == 'Ethanol resistant fraction' & where == 'Between individual')$value, 
@@ -681,20 +740,61 @@ wilcox.test(filter(firmicutesW_df, type == 'Sporeforming OTUs' & where == 'Betwe
             filter(firmicutesW_df, type == 'Non-sporeforming Bacillota' & where == 'Between individual')$value, paired = FALSE, conf.int = TRUE)
 
 
-# Generalized UniFrac distances
-gUniFrac = GUniFrac(seqtab, tree=tree, size.factor = NULL, alpha = c(0, 0.5, 1), verbose = TRUE)$unifracs
+generate_GUniFrac <- function(data, tree, metadata) {
+  # Filter otutab
+  otutab <- data %>%
+    select(Group, name, value) %>%
+    pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
+    column_to_rownames('Group')
+  
+  # Filter tree
+  tree <- ape::drop.tip(phy=tree, tip=setdiff(tree$tip.label, data$name))
+  
+  # Calculate Generalized UniFrac distances
+  gUniFrac <- GUniFrac(as.matrix(otutab), tree=tree, size.factor = NULL, alpha = c(0, 0.5, 1), verbose = TRUE)$unifracs
+  
+  # Transform the UniFrac results into a meaningful table
+  guni_df <- as.data.frame(gUniFrac[, , "d_0.5"]) %>%
+    rownames_to_column('Group') %>%
+    pivot_longer(-Group, names_to = "name", values_to = "value") %>%
+    filter(Group != name) %>%
+    left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
+    left_join(metadata %>% select(Group, person, date, biota), by=c('name' = 'Group'))
+  
+  # Return all the generated objects as a list
+  return(guni_df)
+}
 
-as.data.frame(gUniFrac[, , "d_0.5"]) %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
-  left_join(metadata %>% select(Group, person, date, biota), by='Group') %>%
-  left_join(metadata  %>% select(Group, person, date, biota), by=join_by('name' == 'Group')) %>%
-  mutate(same_person= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
-         which_biota= ifelse(biota.x == 'Microbiota' & biota.y == 'Microbiota', 'Microbiota',
-                             ifelse(biota.x == 'Ethanol resistant fraction' & biota.y == 'Ethanol resistant fraction', 'Ethanol resistant fraction', 'Both'))) %>%
-  filter(which_biota != 'Both') %>%
-  ggplot(aes(x=same_person, y=value, fill=which_biota)) +
+GUni_all = generate_GUniFrac(micro, tree, seq_metadata) %>%
+  mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+         type= ifelse(biota.y == biota.x, 'Microbiota', '')) %>%
+  rbind(generate_GUniFrac(nonspore, tree, seq_metadata) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Microbiota without spore forming OTUs', ''))) %>%
+  rbind(generate_GUniFrac(bacillota_nonspore, tree, seq_metadata) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Non-spore forming Bacillota OTUs', ''))) %>%
+  rbind(generate_GUniFrac(etoh, tree, seq_metadata) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Ethanol resistant fraction', ''))) %>%
+  rbind(generate_GUniFrac(spore, tree, seq_metadata) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Spore forming OTUs', ''))) %>%
+  rbind(generate_GUniFrac(etoh_nonspore, tree, seq_metadata) %>% 
+          mutate(where= ifelse(person.x==person.y, 'Within individual', 'Between individual'), 
+                 type= ifelse(biota.y == biota.x, 'Ethanol resistant fraction without spore formign OTUs', '')))
+
+GUni_all$type <- factor(GUni_all$type, levels = c('Microbiota', 'Microbiota without spore forming OTUs','Non-spore forming Bacillota OTUs',
+                                                  'Ethanol resistant fraction', 'Spore forming OTUs', 'Ethanol resistant fraction without spore formign OTUs'))
+
+GUni_all %>% 
+  ggplot(aes(x=where, y=value, fill=type)) +
   geom_boxplot() +
-  labs(y="generalized UniFrac distance", x="", fill='')
+  labs(y="generalized UniFrac distance", x="", fill='') 
 
+# Within
+wilcox.test(filter(guni_df, type == 'Ethanol resistant fraction' & where == 'Within individual')$value, 
+            filter(guni_df, type == 'Microbiota' & where == 'Within individual')$value, paired = FALSE, conf.int = TRUE)
+# Between
+wilcox.test(filter(guni_df, type == 'Ethanol resistant fraction' & where == 'Between individual')$value, 
+            filter(guni_df, type == 'Microbiota' & where == 'Between individual')$value, paired = FALSE, conf.int = TRUE)
