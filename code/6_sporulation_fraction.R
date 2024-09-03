@@ -629,7 +629,7 @@ otu_corr %>% filter(estimate > 0) %>%
 otutabA %>% filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = ni, y = mi)) +
   geom_point() +
-  geom_text(mapping = aes(label = Group.y)) +
+  #geom_text(mapping = aes(label = Group.y)) +
   scale_y_log10() +
   scale_x_log10()+
   #geom_hline(yintercept = 1) +
@@ -752,6 +752,14 @@ ggplot(var_host, aes(x = person, y = var_log_ratio)) +
   labs(x = 'Individuals', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)', color = '')
 
 ggsave('out/submission/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
+
+# Plot OTus insted of people
+var_host %>% 
+  filter(var_log_ratio > 0) %>%
+ggplot(aes(x = name, y = var_log_ratio, color = person)) +
+  geom_point(size = 3) +
+  labs(x = 'OTUs', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)', color = '')
+ggsave('out/exploration/varPersonPopulation_v2.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 # What if we look at individual OTUs do some have larger variation than others?
 otu_order <- var_host %>%
