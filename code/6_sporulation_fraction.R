@@ -754,12 +754,11 @@ ggplot(var_host, aes(x = person, y = var_log_ratio)) +
 ggsave('out/submission/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 # Plot OTus insted of people
-var_host %>% 
-  filter(var_log_ratio > 0) %>%
-ggplot(aes(x = name, y = var_log_ratio, color = person)) +
-  geom_point(size = 3) +
-  labs(x = 'OTUs', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)', color = '')
-ggsave('out/exploration/varPersonPopulation_v2.png', height = 20, width = 30, units= 'cm', dpi = 600)
+ggplot(var_host, aes(x = var_log_ratio)) +
+  geom_histogram() +
+  geom_vline(xintercept = 1, color = 'blue') +
+  labs(y = 'Number of OTUs', x = 'Variance of log(mi/ni host) / Variance of log (mi/ni all)', color = '')
+ggsave('out/submission/var_host_population_OTUs.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 # What if we look at individual OTUs do some have larger variation than others?
 otu_order <- var_host %>%
@@ -787,6 +786,15 @@ var_host %>%
   labs(x = 'Variance of log(mi/ni host) / Variance of log (mi/ni all)', y = 'Density')
 ggsave('out/submission/varPersonPopulation_density.png', dpi = 600)
 
+
+# Different graphics 
+var_host
+
+ggplot(var_host, (aes(x = var_all, y = var_person, color = person))) +
+  geom_point(size = 3) +
+  geom_abline()
+
+
 # Statistics 
 #Statistical Test - Levene's Test for Equality of Variance
 otu_stat = otutabMN %>% filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
@@ -801,12 +809,6 @@ print(fligner_test_result)
 # p-value = ***; variances across groups (people) are NOT equal
 
 # Analyze variance components to determine individual and population contributions to variability.
-# Mixed-Effects Model
-# Model formula: log_ratio ~ (1 | person) + (1 | name)
-library(lme4)
-model_person <- lmer(log_ratio ~ name + (1 | person), data = otu_stat)
-summary(model_person)
-anova(model_person)
 
 # Are OTUs correlated across days in a given host
 otutabMN %>% 
@@ -842,20 +844,19 @@ otutabMN %>%
   facet_wrap(~person) +
   scale_y_log10() +
   labs(x = 'Day', y = '(mi/ni) / mean (mi/ni)', color = '')
-ggsave('out/submission/mini_days_person.png', width = 20, height = 15, units = 'cm', dpi=600)
+ggsave('out/submission/mini_days_person.png', width = 30, height = 15, units = 'cm', dpi=600)
 
 # Statistics are OTU mi/ni values correlated across days ? 
 time_stat = otutabMN %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
+  mutate(x = mi/ni) %>%
   group_by(person, name) %>%
   mutate(mean = mean(mi/ni, na.rm = TRUE)) %>%
   ungroup() %>%
   mutate(y = (mi/ni)/mean)
 
-# Fit the linear mixed effects model 
-model_day <- lmer(y ~ day * (1 | person), data = time_stat)
-summary(lmodel)
-anova(lmodel)
+###
+##
 
 time_stat %>% left_join(filter(metadata, substr(Group, 1, 1) == 'M'), by = 'original_sample') %>%
   ggplot(aes(x = as.factor(time_point), y = name)) +
@@ -905,7 +906,7 @@ for (p in unique(otutabMN$person)) {
     pivot_wider(names_from = 'name', values_from = 'x', values_fill = 0) %>%
     column_to_rownames('original_sample')
   
-  xtab_cor = cor(xtab) %>%
+  xtab_cor = cor(xtab, method = 'pearson') %>%
     as.data.frame() %>%
     rownames_to_column('name2') %>%
     pivot_longer(cols=starts_with('Otu')) %>%
@@ -922,6 +923,20 @@ ggplot(results, aes(x = name, y = name2, fill = value)) +
   labs( x = '', y = '') +
   facet_wrap(~person, nrow = 3, scales = 'free')
 ggsave('out/exploration/heatmap_byperson.png', height = 20, width = 20, units = 'cm', dpi=600)
+
+# Distribution of OTUs correlation between them selves in differnt individuals 
+results %>%
+  filter(name != name2) %>%
+  ggplot(aes(x = value)) +
+  geom_density() +
+  labs(x = 'Correlation value', y = 'Density', color = 'Individual')
+ggsave('out/exploration/OTU_correlation.png', dpi= 600)
+
+results %>% 
+  filter(name != name2) %>%
+  mutate(value2 = 1) %>%
+  ggplot(aes(y=value, x = value2)) +
+  geom_violin()
 
 # dISTRIBUTION OF VAR MI(NI) OTUS
 otu_rel = otutab_absrel %>%
