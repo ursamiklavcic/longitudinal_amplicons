@@ -467,4 +467,61 @@ ggsave('out/exploration/unweightedUnifrac_time.png', width = 24, height = 18, un
 
 
 # What if I show this in a different way. As in how many OTUs are shared within a person/betwen people?
+all_person <- otu_all %>%
+  filter(value > 0) %>%
+  group_by(person) %>%
+  summarise(all_person = n_distinct(name))
+
+all_fraction <- otu_all %>%
+  filter(value > 0) %>%
+  group_by(person, fraction) %>%
+  summarise(all_fraction = n_distinct(name))
+
+
+core_otus <- otu_all %>%
+  mutate(Group_clean = str_remove(Group, "-.*$")) %>%
+  left_join(metadata %>% select(Group, date), by = join_by('Group_clean' == 'Group')) %>%
+  mutate(PA = ifelse(value > 0, 1, 0)) %>%
+  group_by(person, fraction, name) %>%
+  arrange(date, .by_group = TRUE) %>%
+  # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
+  mutate(otu_cumsum = cumsum(PA)) %>%
+  ungroup() %>%
+  filter(otu_cumsum > 11) %>%
+  group_by(person, fraction) %>%
+  summarise(name = list(unique(name)), .groups = 'drop') %>%
+  mutate(core = sapply(name, function(x) length(unique(x)))) %>%
+  left_join(all_person, by = 'person') %>%
+  left_join(all_fraction, by = c('person', 'fraction')) %>%
+  mutate(percent_core = (core/all_person) * 100, 
+         percent_fraction = (all_fraction/all_person) * 100)
+
+ggplot(core_otus, aes(x = person, y = percent_fraction, fill = fraction)) +
+  geom_bar(stat = 'identity') +
+  labs(x = 'Individual', y = 'Fractions of microbiota (%)', fill = '')
+ggsave('out/exploration/percent_fractions.png', width = 10, height = 20, unit = 'cm', dpi= 600)
+
+ggplot(core_otus, aes(x = person, y = percent_core, fill = fraction)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  labs( x = '', y= 'OTUs in each fraction present in individual all the time (%)', fill = '')
+ggsave('out/exploration/percent_core_fractions.png', width = 20, height = 15, units = 'cm', dpi=600)
+
+
+# OTUs shared between individuals 
+core_all <- unnest(core_otus, name) %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = 'person', values_from = 'value', values_fill = 0) %>%
+  group_by(fraction, name) %>%
+  summarise(sum_all = sum(A+B+C+D+E+F+G+H+I)) %>%
+  group_by(fraction, sum_all) %>%
+  summarise(number_otus = n_distinct(name), .groups = 'drop') %>%
+  mutate(percent = number_otus/sum(number_otus)*100)
+
+ggplot(core_all, aes(x = fraction, y = percent, 
+                     fill = ifelse(sum_all > 3, 'Shared between more than 3 individuals',
+                                   'Shared between less than 3 individuals'))) +
+  geom_bar(stat = 'identity') +
+  labs(x = '', y = 'Percent of OTUs shared between individuals', fill = '')
+
+ggsave('out/exploration/core_otus_all.png', width = 15, height = 20, units = 'cm', dpi=600)
 
