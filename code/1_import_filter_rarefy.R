@@ -73,37 +73,54 @@ saveRDS(metadata, 'data/r_data/metadata.RDS')
 ##
 # Subsets for my analysis! 
 
-# Bulk microbiota = all from microbiota sample = not removing anything 
-# Ethnaol resistant fraction = not removing anything
-otu_long = rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
+##
+# Prepare the data 
+# OTUs
+otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
   pivot_longer(cols = starts_with('Otu')) %>%
-  left_join(metadata %>% select(original_sample, Group, person), by = 'Group')
+  left_join(metadata %>% select(original_sample, Group, person), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value)) %>%
+  ungroup() %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate(norm_abund = rel_abund * copies) %>%
+  select(Group, name, value, original_sample, person, norm_abund, rel_abund) %>%
+  left_join(taxtab, by = 'name')
 
-# sporeformers_list = OTUs that were present in both microbiota and ethanol resistant samples and have more counts in ethanol resistant sample than in microbiota sample 
-sporeformers_list =                       
-  left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
-            otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
-            by = join_by('name', 'original_sample', 'person')) %>%
-  left_join(taxtab, by = 'name') %>%
+otu_etoh <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                      otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
+                      by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
+  mutate(y = ifelse(value.y > 0 & value.x > 0, 'Yes', 'No')) %>%
+  filter(y == 'Yes') %>%
+  #filter(norm_abund.x > 0 & norm_abund.y > 0) %>%
+  #mutate(fraction = value.y/(value.y + value.x)) %>%
+  #filter(fraction > 0.5) %>%
+  pull(unique(name))
+
+saveRDS(otu_etoh, 'data/r_data/etoh_otus.RDS')
+
+non_etoh <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
+  mutate(Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
+saveRDS(non_etoh, 'data/r_data/nonetoh_otus.RDS')
+
+etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
+  filter(Phylum != 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-EO"), fraction = 'Other ethanol resistant OTUs')
+saveRDS(etoh_other, 'data/r_data/etoh_otus_other.RDS')
+
+etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
   filter(Phylum == 'Firmicutes') %>%
-  #group_by(person, name) %>%
-  #reframe(value.x = sum(value.x), value.y = sum(value.y)) %>%
-  # True sporobiota is only if there is at least 5 reads in the microbiota sample and more than 10 in sporobiota in each sample
-  mutate(biota = ifelse(value.x > 5 & value.y > 10 & value.y > value.x, 'Sporobiota', 'Microbiota')) %>%
-  filter(biota == 'Sporobiota') %>%
-  pull(unique(name))
-saveRDS(sporeformers_list, 'data/r_data/sporeformers_list.RDS')
+  mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
+saveRDS(etoh_firm, 'data/r_data/etoh_otus_Bacillota.RDS')
 
-firmicutes_microbiota = otu_long %>% filter(substr(Group, 1,1) == 'M' & !(name %in% sporeformers_list)) %>%
-  left_join(taxtab, by = 'name') %>%
-  filter(Phylum == 'Firmicutes') %>%
-  pull(unique(name))
-saveRDS(firmicutes_microbiota, 'data/r_data/firmicutes_microbiota.RDS')
+otu_all <- rbind(non_etoh, etoh_other, etoh_firm)
+otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
+  select(Group,fraction)
 
-# Microbiota - sporobiota! 
-nonsporeformers_list = otu_long %>% filter(substr(Group, 1,1) == 'M' & !(name %in% sporeformers_list)) %>%
-  pull(unique(name))
-saveRDS(nonsporeformers_list, 'data/r_data/nonsporeformers_list.RDS')
+otutab <- select(otu_all, Group, name, value) %>%
+  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
+  column_to_rownames('Group')
+saveRDS(otutab, 'data/r_data/otutab_all_fractions.RDS')
 
 # Phylogenetic analysis 
 # Load tree file from mafft 
@@ -205,6 +222,5 @@ rm(otu_names)
 rm(reads_per_sample)
 
 # Data saved in data/r_data as RDS objects & as basic_data.R (enviroment)
-
 save.image('data/r_data/basic_data.R')
 
