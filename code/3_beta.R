@@ -57,8 +57,11 @@ etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) 
 etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
   filter(Phylum == 'Firmicutes') %>%
   mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
+non_etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
 
-otu_all <- rbind(non_etoh, etoh_other, etoh_firm)
+otu_all <- rbind(non_etoh, etoh_other, etoh_firm, non_etoh_firm)
 otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
   select(Group,fraction)
 
@@ -83,7 +86,7 @@ bray <- as.matrix(dist_bray) %>%
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-bray$fraction.y <- factor(bray$fraction.y , levels = c("Non-ethanol resistant OTUs",  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
+bray$fraction.y <- factor(bray$fraction.y , levels = c("Non-ethanol resistant OTUs", 'Non-ethanol resistant Bacillota',  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
 
 # Statistics 
 within <- filter(bray, same_person == "Within individual") %>%
@@ -119,25 +122,25 @@ anosim_res <- data.frame()
 # Loop through each combination of group pairs
 for (i in 1:ncol(group_combinations)) {
   for (p in unique(bray$same_person)) {
-  # Filter same person or not
-  meta <- filter(bray, same_person == 'Within individual') %>%
-    distinct(Group, .keep_all = TRUE) %>%
-    filter(fraction.y %in% fractions)
-  # Define the number of fractions
-  fractions <- c(group_combinations[1, i], group_combinations[2, i])
-  
-  dist <- filter(bray, same_person == "Within individual" & fraction.y %in% fractions) %>%
-    select(Group, name, value) %>%
-    pivot_wider(values_fill = 1) %>%
-    column_to_rownames('Group') %>%
-    as.dist()
-  
-  anosim <- anosim(dist, meta$fraction.y, permutations = 999)
-  anosim_stat <- data.frame(same_person = p, 
+    # Define the number of fractions
+    fractions <- c(group_combinations[1, i], group_combinations[2, i])
+    # Filter same person or not
+    meta <- filter(bray, same_person == 'Within individual') %>%
+      distinct(Group, .keep_all = TRUE) %>%
+      filter(fraction.y %in% fractions)
+    
+    dist <- filter(bray, same_person == "Within individual" & fraction.y %in% fractions) %>%
+      select(Group, name, value) %>%
+      pivot_wider(values_fill = 1) %>%
+      column_to_rownames('Group') %>%
+      as.dist()
+    
+    anosim <- anosim(dist, meta$fraction.y, permutations = 999)
+    anosim_stat <- data.frame(same_person = p, 
                             fractions = paste(fractions, collapse = " & "), 
                             statistic = anosim$statistic, 
                             significance = anosim$signif)
-  anosim_res <- rbind(anosim_res, anosim_stat)
+    anosim_res <- rbind(anosim_res, anosim_stat)
   
     }
   }
@@ -152,6 +155,7 @@ anosim_res$adjusted_p <- p.adjust(anosim_res$significance, method = "BH")
 # Plot 
 bray_boxplot <- bray %>%
   filter(same_fraction == 'Yes')%>%
+  filter(fraction.y != 'Non-ethanol resistant Bacillota') %>%
   ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
   geom_boxplot() +
   geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
@@ -159,10 +163,19 @@ bray_boxplot <- bray %>%
   labs(y='Bray-Curtis distances', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom') +
   facet_grid(~same_person) 
-ggsave('out/exploration/bray_boxplot.png', bray_boxplot, dpi= 600)
+ggsave('out/submission/bray_boxplot.png', bray_boxplot, dpi= 600)
 
+bray_boxplot_all <- bray %>%
+  filter(same_fraction == 'Yes')%>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='Bray-Curtis distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
 
- # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
+# If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
 # Normalized distances of each individual 
 dist_bray_norm = bray %>%
@@ -251,10 +264,10 @@ time_bray %>%
   ggplot(aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
-  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"), size = 3)) +
+  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), size = 3) +
   labs(x='Days between sampling points', y='Median Bray-Curtis distance', color='') +
   theme(legend.position = 'bottom')
-ggsave('out/exploration/bray_time.png', dpi=600)
+ggsave('out/exploration/bray_time_all.png', dpi=600)
 
 # Pearsons correlation between median of distance between samples and time 
 time_non_etoh <- filter(time_bray, fraction.y == 'Non-ethanol resistant OTUs' ) 
@@ -287,7 +300,7 @@ jaccard <- as.matrix(dist_jaccard) %>%
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-jaccard$fraction.y <- factor(jaccard$fraction.y , levels = c("Non-ethanol resistant OTUs",  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
+jaccard$fraction.y <- factor(jaccard$fraction.y , levels = c("Non-ethanol resistant OTUs", 'Non-ethanol resistant Bacillota',  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
 
 # Statistics 
 within <- filter(jaccard, same_person == "Within individual") %>%
@@ -317,18 +330,18 @@ anotate <- data.frame(same_person = c('Within individual', 'Between individuals'
 
 # Pairwise ANOSIM 
 group_combinations <- combn(levels(jaccard$fraction.y), 2)
-
 anosim_res <- data.frame()
 
 # Loop through each combination of group pairs
 for (i in 1:ncol(group_combinations)) {
   for (p in unique(jaccard$same_person)) {
+    # Define the number of fractions
+    fractions <- c(group_combinations[1, i], group_combinations[2, i])
     # Filter same person or not
     meta <- filter(jaccard, same_person == 'Within individual') %>%
       distinct(Group, .keep_all = TRUE) %>%
       filter(fraction.y %in% fractions)
-    # Define the number of fractions
-    fractions <- c(group_combinations[1, i], group_combinations[2, i])
+    
     
     dist <- filter(jaccard, same_person == "Within individual" & fraction.y %in% fractions) %>%
       select(Group, name, value) %>%
@@ -355,7 +368,7 @@ anosim_res$adjusted_p <- p.adjust(anosim_res$significance, method = "BH")
 
 # Plot 
 jaccard_boxplot <- jaccard %>%
-  filter(same_fraction == 'Yes')%>%
+  filter(same_fraction == 'Yes' & fraction.y != 'Non-ethanol resistant Bacillota')%>%
   ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
   geom_boxplot() +
   geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
@@ -364,6 +377,16 @@ jaccard_boxplot <- jaccard %>%
   theme(axis.text.x = element_blank(), legend.position = 'bottom') +
   facet_grid(~same_person) 
 ggsave('out/exploration/jaccard_boxplot.png', jaccard_boxplot, dpi= 600)
+
+jaccard_boxplot_all <- jaccard %>%
+  filter(same_fraction == 'Yes' ) %>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='Jaccard distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
 
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
@@ -457,7 +480,7 @@ time_jaccard %>%
   ggplot(aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
-  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"), size = 3)) +
+  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), size = 3) +
   labs(x='Days between sampling points', y='Median Jaccard distance', color='') +
   theme(legend.position = 'bottom')
 ggsave('out/exploration/jaccard_time.png', dpi=600)
@@ -544,8 +567,8 @@ positions_w %>%
   left_join(fraction_all, by = 'Group') %>%
   ggplot(aes(x=pcoa1, y=pcoa2, color=person, shape = fraction)) +
   geom_point(size=3) +
-  labs(x=paste0(round(non_etoh_w$percent_explained[1], digits = 1), '%'), 
-       y=paste0(round(non_etoh_w$percent_explained[2], digits = 1), '%'), 
+  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
+       y=paste0(round(percent_explained[2], digits = 1), '%'), 
        color = 'Individual', shape = 'Fraction') 
 ggsave('out/exploration/weighted_pcoa_all.png', height = 20, width = 30, dpi=600)
 
@@ -561,11 +584,11 @@ unifrac_w <- as.data.frame(as.matrix(dist_w)) %>%
   left_join(seq_metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
   left_join(fraction_all, by = 'Group') %>%
   left_join(fraction_all, by = c('name' = 'Group')) %>%
-  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individual'), 
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-unifrac_w$fraction.y = factor(unifrac_w$fraction.y, levels = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant Bacillota', 'Other ethanol resistant OTUs', 'Ethanol resistant Bacillota'))
+unifrac_w$fraction.y = factor(unifrac_w$fraction.y, levels = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant Bacillota',  'Ethanol resistant Bacillota', 'Other ethanol resistant OTUs'))
 
 uni_within <- filter(unifrac_w, same_person ==  'Within individual') %>%
   select(Group, name, value) %>%
@@ -574,17 +597,39 @@ uni_within <- filter(unifrac_w, same_person ==  'Within individual') %>%
 
 anosim_within <- anosim(uni_within, grouping = fraction_all$fraction, permutations = 999)
 
-uni_between <- filter(unifrac_w, same_person ==  'Between individual') %>%
+uni_between <- filter(unifrac_w, same_person ==  'Between individuals') %>%
   select(Group, name, value) %>%
   pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
 anosim_between <- anosim(uni_between, grouping = fraction_all$fraction, permutations = 999)
 
-ggplot(unifrac_w, aes(x=same_person, y=value, fill=fraction.y)) +
+annotate <-  data.frame(same_person = c('Within individual', 'Between individuals'),
+                        fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
+                        significance = c(anosim_within$signif, anosim_between$signif), 
+                        statistic = c(anosim_within$statistic, anosim_between$statistic))
+
+
+unifracW_boxplot <- unifrac_w %>%
+  filter(same_fraction == 'Yes' & fraction.y != 'Non-ethanol resistant Bacillota') %>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
   geom_boxplot() +
-  labs(y="weighted UniFrac distance", x="", fill='') 
-ggsave('out/exploration/weightedUnifrac_boxplot_all.png', width = 24, height = 18, units = 'cm', dpi = 600)
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='weighted UniFrac distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
+ggsave('out/exploration/weightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
+
+unifracW_boxplot_all <- unifrac_w %>%
+  filter(same_fraction == 'Yes') %>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='weighted UniFrac distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
 
 # Progression in time 
 unifrac_w_time <- unifrac_w %>% 
@@ -596,7 +641,7 @@ unifrac_w_time <- unifrac_w %>%
 ggplot(unifrac_w_time, aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
-  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
+  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), size = 3) +
   labs(x='Days between sampling points', y='Median weighted UniFrac distance', color='Sample type')
 ggsave('out/exploration/weightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
@@ -617,8 +662,8 @@ positions_u %>%
   left_join(fraction_all, by = 'Group') %>%
   ggplot(aes(x=pcoa1, y=pcoa2, color=person, shape = fraction)) +
   geom_point(size=3) +
-  labs(x=paste0(round(non_etoh_w$percent_explained[1], digits = 1), '%'), 
-       y=paste0(round(non_etoh_w$percent_explained[2], digits = 1), '%'), 
+  labs(x=paste0(round(percent_explained[1], digits = 1), '%'), 
+       y=paste0(round(percent_explained[2], digits = 1), '%'), 
        color = 'Individual', shape = 'Fraction') 
 ggsave('out/exploration/unweighted_pcoa_all.png', height = 20, width = 30, dpi=600)
 
@@ -634,11 +679,11 @@ unifrac_u <- as.data.frame(as.matrix(dist_u)) %>%
   left_join(seq_metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
   left_join(fraction_all, by = 'Group') %>%
   left_join(fraction_all, by = c('name' = 'Group')) %>%
-  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individual'), 
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-unifrac_u$fraction.y = factor(unifrac_u$fraction.y, levels = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant Bacillota', 'Other ethanol resistant OTUs', 'Ethanol resistant Bacillota'))
+unifrac_u$fraction.y = factor(unifrac_u$fraction.y, levels = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant Bacillota',  'Ethanol resistant Bacillota', 'Other ethanol resistant OTUs'))
 
 uni_within <- filter(unifrac_u, same_person ==  'Within individual') %>%
   select(Group, name, value) %>%
@@ -647,17 +692,40 @@ uni_within <- filter(unifrac_u, same_person ==  'Within individual') %>%
 
 anosim_within_u <- anosim(uni_within, grouping = fraction_all$fraction, permutations = 999)
 
-uni_between <- filter(unifrac_u, same_person ==  'Between individual') %>%
+uni_between <- filter(unifrac_u, same_person ==  'Between individuals') %>%
   select(Group, name, value) %>%
   pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
 anosim_between_u <- anosim(uni_between, grouping = fraction_all$fraction, permutations = 999)
 
-ggplot(unifrac_u, aes(x=same_person, y=value, fill=fraction.y)) +
+anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
+                      fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
+                      significance = c(anosim_within_u$signif, anosim_between$signif), 
+                      statistic = c(anosim_within_u$statistic, anosim_between$statistic))
+
+
+unifracU_boxplot <- unifrac_u %>%
+  filter(same_fraction == 'Yes' & fraction.y != 'Non-ethanol resistant Bacillota') %>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
   geom_boxplot() +
-  labs(y="unweighted UniFrac distance", x="", fill='') 
-ggsave('out/exploration/unweightedUnifrac_boxplot_all.png', width = 24, height = 18, units = 'cm', dpi = 600)
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='unweighted UniFrac distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
+ggsave('out/exploration/unweightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
+
+unifracU_boxplot_all <- unifrac_u %>%
+  filter(same_fraction == 'Yes') %>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='unweighted UniFrac distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
+
 
 # Progression in time 
 unifrac_u_time <- unifrac_u %>% 
@@ -670,11 +738,14 @@ ggplot(unifrac_u_time, aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
-  labs(x='Days between sampling points', y='Median unweighted UniFrac distance', color='Sample type')
+  labs(x='Days between sampling points', y='Median unweighted UniFrac distance', color='') +
+  theme(legend.position = 'bottom')
 ggsave('out/exploration/unweightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
-
-
+# Supplement figre, to figure 1 
+ggarrange(bray_boxplot_all, jaccard_boxplot_all, unifracW_boxplot_all, unifracU_boxplot_all, 
+          common.legend = TRUE, legend = 'bottom')
+ggsave('out/exploration/boxplot_all.png', dpi=600)
 
 # ##
 # # Generalized UniFrac
