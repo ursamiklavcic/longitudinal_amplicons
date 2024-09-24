@@ -810,6 +810,7 @@ all_fraction <- otu_all %>%
 
 
 core_otus <- otu_all %>%
+  filter(fraction != 'Non-ethanol resistant Bacillota') %>%
   mutate(Group_clean = str_remove(Group, "-.*$")) %>%
   left_join(metadata %>% select(Group, date), by = join_by('Group_clean' == 'Group')) %>%
   mutate(PA = ifelse(value > 0, 1, 0)) %>%
@@ -850,9 +851,19 @@ core_all <- unnest(core_otus, name) %>%
 
 ggplot(core_all, aes(x = fraction, y = percent, 
                      fill = ifelse(sum_all > 3, 'Shared between more than 3 individuals',
-                                   'Shared between less than 3 individuals'))) +
+                                   'Shared between 3 or less individuals'))) +
   geom_bar(stat = 'identity') +
-  labs(x = '', y = 'Percent of OTUs shared between individuals', fill = '')
+  labs(x = '', y = 'Percent of OTUs shared between individuals', fill = '') +
+  theme(legend.position = 'bottom')
+ggsave('out/exploration/core_otus_all.png', dpi=600)
 
-ggsave('out/exploration/core_otus_all.png', width = 15, height = 20, units = 'cm', dpi=600)
-
+core_all %>%
+  group_by(fraction) %>%
+  mutate(percent_100 = percent/sum(percent)) %>%
+  ggplot(aes(x = fraction, y = percent_100, 
+                     fill = ifelse(sum_all > 3, 'Shared between more than 3 individuals',
+                                   'Shared between 3 or less individuals'))) +
+  geom_bar(stat = 'identity') +
+  labs(x = '', y = 'Percent of OTUs shared between individuals', fill = '') +
+  theme(legend.position = 'bottom')
+ggsave('out/exploration/core_otus_percent100.png', dpi= 600)
