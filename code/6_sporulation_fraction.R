@@ -649,14 +649,13 @@ otutabA = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
 # Variability of mi/ni across hosts 
 otutabA %>% filter(value.x > 0 & value.y > 0) %>%
   mutate(miDIVni = mi/ni) %>%
-  group_by(person, sporeforming, name) %>%
+  group_by(person, name) %>%
   summarise(mean = mean(miDIVni),
             sd = sd(miDIVni), 
             .groups = 'drop') %>%
   ggplot(aes(x = person, y = mean)) +
   geom_boxplot() +
   scale_y_log10()+
-  facet_grid(~sporeforming, scales = 'free') +
   labs(x = 'Individual', y = 'Averange mi/ni per OTU')
 ggsave('out/exploration/mi_ni_bacillota.png', dpi = 600)
 
@@ -703,7 +702,7 @@ otutabMN = filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
 # Mi/ni over time in each person 
 otutabMN %>%
   ggplot(aes(x = day, y = log10(mi/ni), color = name)) +
-  geom_line() +
+  geom_line(show.legend = FALSE) +
   facet_wrap(~person, scales = 'free')
 ggsave('out/exploration/logmini_person_time.png', height = 20, width = 30, units = 'cm', dpi = 600)
 
@@ -747,7 +746,7 @@ var_host$person <- factor(var_host$person, levels = person_order)
 
 ggplot(var_host, aes(x = person, y = var_log_ratio)) +
   geom_boxplot() +
-  geom_jitter(aes(color = name), size = 2) +
+  geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   #geom_hline(yintercept = 1) +
   labs(x = 'Individuals', y= 'Variance of log(mi/ni host) / Variance of log (mi/ni all)', color = '')
 
