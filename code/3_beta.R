@@ -69,7 +69,7 @@ otutab <- select(otu_all, Group, name, value) %>%
 # Bray-Curtis
 dist_bray <- vegdist(otutab, method = 'bray')
 
-bray <- as.matrix(dist) %>% 
+bray <- as.matrix(dist_bray) %>% 
   as_tibble(rownames = 'Group') %>%
   pivot_longer(-Group) %>%
   filter(Group != name) %>%
@@ -83,14 +83,7 @@ bray <- as.matrix(dist) %>%
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-bray$fraction.y <- factor(bray$fraction.y , levels = c("Non-ethanol resistant OTUs", "Other ethanol resistant OTUs", "Ethanol resistant Bacillota"))
-
-bray %>%
-  filter(same_fraction == 'Yes')%>%
-  ggplot(aes(x=same_person, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  labs(y='Bray-Curtis distance', x='', fill='')
-ggsave('out/exploration/bray_boxplot.png', width = 20, height = 20, unit = 'cm', dpi= 600)
+bray$fraction.y <- factor(bray$fraction.y , levels = c("Non-ethanol resistant OTUs",  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
 
 # Statistics 
 within <- filter(bray, same_person == "Within individual") %>%
@@ -103,7 +96,6 @@ within_dist <- filter(bray, same_person == "Within individual") %>%
   as.dist()
 anosim_within <- anosim(within_dist, within$fraction.y, permutations = 999)
 
-
 between <- filter(bray, same_person == "Between individuals") %>%
   distinct(Group, .keep_all = TRUE) 
 between_dist <- filter(bray, same_person == "Between individuals") %>%
@@ -114,11 +106,63 @@ between_dist <- filter(bray, same_person == "Between individuals") %>%
 
 anosim_between <- anosim(between_dist, between$fraction.y, permutations = 999)
 
-# Pairwise Wilcox
-wilcox_within <- pairwise.wilcox.test(within$value, within$fraction.y, p.adjust.method = 'BH')
-wilcox_between <- pairwise.wilcox.test(between$value, between$fraction.y, p.adjust.method = 'BH')
+anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
+                      fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
+                      significance = c(anosim_within$signif, anosim_between$signif), 
+                      statistic = c(anosim_within$statistic, anosim_between$statistic))
 
-# If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
+# Pairwise ANOSIM 
+group_combinations <- combn(levels(bray$fraction.y), 2)
+
+anosim_res <- data.frame()
+
+# Loop through each combination of group pairs
+for (i in 1:ncol(group_combinations)) {
+  for (p in unique(bray$same_person)) {
+  # Filter same person or not
+  meta <- filter(bray, same_person == 'Within individual') %>%
+    distinct(Group, .keep_all = TRUE) %>%
+    filter(fraction.y %in% fractions)
+  # Define the number of fractions
+  fractions <- c(group_combinations[1, i], group_combinations[2, i])
+  
+  dist <- filter(bray, same_person == "Within individual" & fraction.y %in% fractions) %>%
+    select(Group, name, value) %>%
+    pivot_wider(values_fill = 1) %>%
+    column_to_rownames('Group') %>%
+    as.dist()
+  
+  anosim <- anosim(dist, meta$fraction.y, permutations = 999)
+  anosim_stat <- data.frame(same_person = p, 
+                            fractions = paste(fractions, collapse = " & "), 
+                            statistic = anosim$statistic, 
+                            significance = anosim$signif)
+  anosim_res <- rbind(anosim_res, anosim_stat)
+  
+    }
+  }
+
+anosim_res$adjusted_p <- p.adjust(anosim_res$significance, method = "BH")
+
+
+# # Pairwise Wilcox
+# wilcox_within <- pairwise.wilcox.test(within$value, within$fraction.y, p.adjust.method = 'BH')
+# wilcox_between <- pairwise.wilcox.test(between$value, between$fraction.y, p.adjust.method = 'BH')
+
+# Plot 
+bray_boxplot <- bray %>%
+  filter(same_fraction == 'Yes')%>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='Bray-Curtis distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
+ggsave('out/exploration/bray_boxplot.png', bray_boxplot, dpi= 600)
+
+
+ # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
 # Normalized distances of each individual 
 dist_bray_norm = bray %>%
@@ -168,6 +212,19 @@ ggsave('out/exploration/braycurtis_nmds_nonetoh.png', width = 25, height = 20, u
 # Define the number of sasmples per person
 levels <- c("A", "B", "C", "D", "E", "F", "G", "H", "I")
 repetitions <- bray %>% 
+  filter(same_person == 'Within individual') %>%
+  group_by(person.x) %>% 
+  summarise(n = n_distinct(Group)) %>% 
+  pull(n)
+groups = factor(rep(levels, times = repetitions), levels = levels)
+mod = betadisper(dist_bray, group = groups, type = 'centroid')
+anova(mod)
+plot(mod)
+boxplot(mod)
+
+levels <- c("A", "B", "C", "D", "E", "F", "G", "H", "I")
+repetitions <- bray %>% 
+  filter(same_person == 'Between individuals') %>%
   group_by(person.x) %>% 
   summarise(n = n_distinct(Group)) %>% 
   pull(n)
@@ -180,7 +237,7 @@ boxplot(mod)
 # Distances between samples x days appart 
 # Calculate if there is a difference in the distance between samples of individuals if they were sampled, 
 # closer together and more appart between microbiota and EtOH fraction 
-time_bray = bray %>%
+time_bray <- bray %>%
   # Filter different individuals 
   filter(same_person == 'Within individual') %>%
   # Calculate the difference between sampling times
@@ -194,9 +251,10 @@ time_bray %>%
   ggplot(aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
-  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
-  labs(x='Days between sampling points', y='Median Bray-Curtis distance', color='Fraction')
-ggsave('out/exploration/bray_time.png', height= 20, width= 30, units= 'cm', dpi=600)
+  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"), size = 3)) +
+  labs(x='Days between sampling points', y='Median Bray-Curtis distance', color='') +
+  theme(legend.position = 'bottom')
+ggsave('out/exploration/bray_time.png', dpi=600)
 
 # Pearsons correlation between median of distance between samples and time 
 time_non_etoh <- filter(time_bray, fraction.y == 'Non-ethanol resistant OTUs' ) 
@@ -211,9 +269,211 @@ time_etoh_firm <- filter(time_bray, fraction.y == 'Ethanol resistant Bacillota' 
 cor.test(as.numeric(time_etoh_firm$diff), time_etoh_firm$median, method='pearson')
 # # Positive correlation 0.024, not significant
 
+##
 # Jaccard
+dist_jaccard <- vegdist(otutab, method = 'jaccard')
+
+jaccard <- as.matrix(dist_jaccard) %>% 
+  as_tibble(rownames = 'Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(otu_fraction, by = 'Group') %>%
+  left_join(otu_fraction, by = join_by('name' == 'Group')) %>%
+  mutate(Group_clean = str_remove(Group, "-.*$"), 
+         name_clean = str_remove(name, '-.*$')) %>%
+  left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
+  left_join(metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
+         same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
+  filter(same_fraction == 'Yes')
+
+jaccard$fraction.y <- factor(jaccard$fraction.y , levels = c("Non-ethanol resistant OTUs",  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
+
+# Statistics 
+within <- filter(jaccard, same_person == "Within individual") %>%
+  distinct(Group, .keep_all = TRUE)
+
+within_dist <- filter(jaccard, same_person == "Within individual") %>%
+  select(Group, name, value) %>%
+  pivot_wider(values_fill = 1) %>%
+  column_to_rownames('Group') %>%
+  as.dist()
+anosim_within <- anosim(within_dist, within$fraction.y, permutations = 999)
+
+between <- filter(jaccard, same_person == "Between individuals") %>%
+  distinct(Group, .keep_all = TRUE) 
+between_dist <- filter(jaccard, same_person == "Between individuals") %>%
+  select(Group, name, value) %>%
+  pivot_wider(values_fill = 1) %>%
+  column_to_rownames('Group') %>%
+  as.dist()
+
+anosim_between <- anosim(between_dist, between$fraction.y, permutations = 999)
+
+anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
+                      fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
+                      significance = c(anosim_within$signif, anosim_between$signif), 
+                      statistic = c(anosim_within$statistic, anosim_between$statistic))
+
+# Pairwise ANOSIM 
+group_combinations <- combn(levels(jaccard$fraction.y), 2)
+
+anosim_res <- data.frame()
+
+# Loop through each combination of group pairs
+for (i in 1:ncol(group_combinations)) {
+  for (p in unique(jaccard$same_person)) {
+    # Filter same person or not
+    meta <- filter(jaccard, same_person == 'Within individual') %>%
+      distinct(Group, .keep_all = TRUE) %>%
+      filter(fraction.y %in% fractions)
+    # Define the number of fractions
+    fractions <- c(group_combinations[1, i], group_combinations[2, i])
+    
+    dist <- filter(jaccard, same_person == "Within individual" & fraction.y %in% fractions) %>%
+      select(Group, name, value) %>%
+      pivot_wider(values_fill = 1) %>%
+      column_to_rownames('Group') %>%
+      as.dist()
+    
+    anosim <- anosim(dist, meta$fraction.y, permutations = 999)
+    anosim_stat <- data.frame(same_person = p, 
+                              fractions = paste(fractions, collapse = " & "), 
+                              statistic = anosim$statistic, 
+                              significance = anosim$signif)
+    anosim_res <- rbind(anosim_res, anosim_stat)
+    
+  }
+}
+
+anosim_res$adjusted_p <- p.adjust(anosim_res$significance, method = "BH")
 
 
+# # Pairwise Wilcox
+# wilcox_within <- pairwise.wilcox.test(within$value, within$fraction.y, p.adjust.method = 'BH')
+# wilcox_between <- pairwise.wilcox.test(between$value, between$fraction.y, p.adjust.method = 'BH')
+
+# Plot 
+jaccard_boxplot <- jaccard %>%
+  filter(same_fraction == 'Yes')%>%
+  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
+  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  labs(y='Jaccard distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  facet_grid(~same_person) 
+ggsave('out/exploration/jaccard_boxplot.png', jaccard_boxplot, dpi= 600)
+
+
+# If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
+# for the differences between microbiota and sporobiota! 
+# Normalized distances of each individual 
+dist_jaccard_norm = jaccard %>%
+  filter(same_person == 'Within individual') %>%
+  group_by(person.x, fraction.y) %>%
+  # z-score normalization 
+  mutate(z_norm_value = ((value-mean(value)/sd(value))), 
+         # max-min normalization
+         min_max_norm = (value - min(value))/(max(value) - min(value))) 
+
+z_score_plot = dist_jaccard_norm %>%
+  ggplot(aes(x=fraction.y, y=z_norm_value, fill=fraction.y)) +
+  geom_boxplot() +
+  #annotate("text", x=1.5, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox.test(z_norm_value  ~ biota, data = dist_jaccard_norm)$p.value)), size=3, color='black') +
+  labs(x='', y='Jaccard distances (Z-score normalized)', fill='Sample type') +
+  theme(axis.text.x = element_blank()) 
+
+minmax_plot = dist_jaccard_norm %>%
+  ggplot(aes(x=fraction.y, y=min_max_norm, fill=fraction.y)) +
+  geom_boxplot() +
+  #annotate("text", x=1.5, y= 1, label=paste("Mann-Whitney test p-value:", scientific(wilcox.test(min_max_norm  ~ biota, data = dist_jaccard_norm)$p.value)), size=3, color='black') +
+  labs(x='', y='Jaccard distances (min-max normalized)', fill='Sample type') +
+  theme(axis.text.x = element_blank()) 
+
+ggarrange(z_score_plot, minmax_plot, 
+          common.legend = TRUE, 
+          legend = 'right')
+ggsave('out/exploration/jaccardc_norm_boxplot.png', width = 20, height = 20, units = 'cm', dpi = 600)
+
+# NMDS plot
+nmds <- metaMDS(dist_jaccard)
+nmds_positions <-
+  as.data.frame(scores(nmds, display='sites')) %>%
+  rownames_to_column('Group') %>%
+  mutate(Group_clean = str_remove(Group, "-.*$")) %>%
+  left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group'))
+
+
+nmds_positions %>%
+  ggplot(aes(x=NMDS1, y=NMDS2, color=person)) +
+  geom_point(size=3) +
+  #geom_text_repel(aes(label=sample), size= 4, colour='black', max.overlaps = 20) +
+  scale_size_continuous(range = c(3,6)) +
+  labs(x='', y='', color='Individual')
+ggsave('out/exploration/jaccardc_nmds.png', dpi = 600)
+
+# Define the number of sasmples per person
+levels <- c("A", "B", "C", "D", "E", "F", "G", "H", "I")
+repetitions <- jaccard %>% 
+  filter(same_person == 'Within individual') %>%
+  group_by(person.x) %>% 
+  summarise(n = n_distinct(Group)) %>% 
+  pull(n)
+groups = factor(rep(levels, times = repetitions), levels = levels)
+mod = betadisper(dist_jaccard, group = groups, type = 'centroid')
+anova(mod)
+plot(mod)
+ggsave('out/exploration/jaccard_pcoa_within.png', dpi = 600)
+boxplot(mod)
+
+levels <- c("A", "B", "C", "D", "E", "F", "G", "H", "I")
+repetitions <- jaccard %>% 
+  filter(same_person == 'Between individuals') %>%
+  group_by(person.x) %>% 
+  summarise(n = n_distinct(Group)) %>% 
+  pull(n)
+groups = factor(rep(levels, times = repetitions), levels = levels)
+mod = betadisper(dist_jaccard, group = groups, type = 'centroid')
+anova(mod)
+plot(mod)
+ggsave('out/exploration/jaccard_pcoa_between.png', dpi = 600)
+boxplot(mod)
+
+# Distances between samples x days appart 
+# Calculate if there is a difference in the distance between samples of individuals if they were sampled, 
+# closer together and more appart between microbiota and EtOH fraction 
+time_jaccard <- jaccard %>%
+  # Filter different individuals 
+  filter(same_person == 'Within individual') %>%
+  # Calculate the difference between sampling times
+  mutate(diff=abs(date.x-date.y)) %>%
+  # group by difference between days and person
+  group_by(fraction.y, person.x, diff) %>%
+  summarise(median=median(value), sd= sd(value)) %>%
+  ungroup() 
+
+time_jaccard %>%
+  ggplot(aes(x=diff, y=median, color=fraction.y)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"), size = 3)) +
+  labs(x='Days between sampling points', y='Median Jaccard distance', color='') +
+  theme(legend.position = 'bottom')
+ggsave('out/exploration/jaccard_time.png', dpi=600)
+
+# Pearsons correlation between median of distance between samples and time 
+time_non_etoh <- filter(time_jaccard, fraction.y == 'Non-ethanol resistant OTUs' ) 
+cor.test(as.numeric(time_non_etoh$diff), time_non_etoh$median, method='pearson') 
+# Negative correlation -0.009, not significant 
+
+time_etoh_other <- filter(time_jaccard, fraction.y == 'Other ethanol resistant OTUs' ) 
+cor.test(as.numeric(time_etoh_other$diff), time_etoh_other$median, method='pearson')
+# # Negative correlation -0.06, not significant
+
+time_etoh_firm <- filter(time_jaccard, fraction.y == 'Ethanol resistant Bacillota' ) 
+cor.test(as.numeric(time_etoh_firm$diff), time_etoh_firm$median, method='pearson')
+# # Positive correlation 0.024, not significant
 
 
 
