@@ -791,9 +791,9 @@ otutabMN %>%
 days <- otutabMN %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
   group_by(person, name) %>%
-  mutate(mean = mean(log10(mi/ni), na.rm = TRUE)) %>%
+  mutate(mean = mean(mi/ni, na.rm = TRUE)) %>%
   ungroup() %>%
-  ggplot(aes(x = day, y = (log10(mi/ni))/mean)) +
+  ggplot(aes(x = day, y = (mi/ni)/mean)) +
   geom_point() +
   geom_line(aes(color = name), show.legend = FALSE) +
   facet_wrap(~person) +
@@ -816,10 +816,10 @@ base <- otutabMN %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
   # variance of all OTUs in a day
   group_by(person, day) %>%
-  summarise(var_person_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
   # avergae variance of OTUs across days 
   group_by(person) %>%
-  mutate(var_day_mean = mean(var_person_day)) %>%
+  mutate(mean_var_day = mean(var_day)) %>%
   ungroup()
 
 # Suffle the days 
@@ -832,15 +832,15 @@ otutabMN_shuffled <- otutabMN %>%
 shuffled <- otutabMN_shuffled %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
   group_by(person, day) %>%
-  summarise(var_person_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
   group_by(person) %>%
-  mutate(var_day_mean = mean(var_person_day)) %>%
+  mutate(mean_var_day = mean(var_day)) %>%
   ungroup()
 
 mutate(base, data ='normal') %>%
   left_join(mutate(shuffled, data = 'shuffled'), by = c('person', 'day')) %>%
-  mutate(a = var_person_day.x/var_day_mean.x, 
-         b = var_person_day.y/var_day_mean.y) %>%
+  mutate(a = var_day.x/mean_var_day.x, 
+         b = var_day.y/mean_var_day.y) %>%
   ggplot(aes(x = a, y = b)) +
   geom_point(size = 3) +
   geom_abline() +
@@ -848,36 +848,20 @@ mutate(base, data ='normal') %>%
 ggsave('out/exploration/statistics_variance_days.png', dpi = 600)
 
 
-#For each host and for each OTU calculate variance over days and average variance over OTUs 
-base_otus <- otutabMN %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
-  group_by(person, name) %>%
-  summarise(var_over_days = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
-  group_by(name) %>%
-  mutate(mean_var_otus = mean(var_over_days))
-
-otutamMN_suffled_otus <- otutabMN %>%
-  group_by(person, day) %>%
-  mutate(name = sample(name)) %>%
-  ungroup()
-
-shuffled_otu <- otutamMN_suffled_otus %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
-  group_by(person, name) %>%
-  summarise(var_over_days = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
-  group_by(name) %>%
-  mutate(mean_var_otus = mean(var_over_days))
-
-mutate(base_otus, data ='normal') %>%
-  left_join(mutate(shuffled_otu, data = 'shuffled'), by = c('person', 'name')) %>%
-  mutate(a = var_over_days.x/mean_var_otus.x, 
-         b = var_over_days.y/mean_var_otus.y) %>%
-  ggplot(aes(x = a, y = b)) +
-  geom_point(size = 3) +
-  geom_abline() +
-  labs(x = 'Variance of an OTU across days in a host / Mean variance of OTUs in a host', y= 'Reshuffled variance of an OTU across days in a host / Mean variance of OTUs in a host') 
-ggsave('out/exploration/statistics_variance_otus_days.png', dpi = 600)
-
+# #For each host and for each OTU calculate variance over days and average variance over OTUs - this is what I'm plotting across days, to see if OTUs are moving together! 
+# otus <- otutabMN %>%
+#   filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
+#   group_by(person, name) %>%
+#   summarise(var_over_days = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+#   group_by(person) %>%
+#   mutate(mean_var_otus = mean(var_over_days))
+# 
+# otus %>%
+#   ggplot(aes(x = day, y = b)) +
+#   geom_point(size = 3) +
+#   geom_abline() +
+#   labs(x = 'Variance of an OTU across days in a host / Mean variance of OTUs in a host', y= 'Reshuffled variance of an OTU across days in a host / Mean variance of OTUs in a host') 
+# ggsave('out/exploration/statistics_variance_otus_days.png', dpi = 600)
 
 
 # Are OTU mi/ni values correlated across days ?
@@ -1026,4 +1010,4 @@ ggsave('out/exploration/heatmap_byperson.png', height = 20, width = 20, units = 
 #   theme(axis.text.x = element_text(angle=90))
 # 
 # # statistics 
-kruskal.test(rel_mn$var, rel_mn$Family)
+# kruskal.test(rel_mn$var, rel_mn$Family)
