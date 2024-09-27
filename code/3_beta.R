@@ -260,7 +260,7 @@ time_bray <- bray %>%
   summarise(median=median(value), sd= sd(value)) %>%
   ungroup() 
 
-time_bray %>%
+b_time <- time_bray %>%
   ggplot(aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
@@ -476,13 +476,12 @@ time_jaccard <- jaccard %>%
   summarise(median=median(value), sd= sd(value)) %>%
   ungroup() 
 
-time_jaccard %>%
+j_time <- time_jaccard %>%
   ggplot(aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), size = 3) +
-  labs(x='Days between sampling points', y='Median Jaccard distance', color='') +
-  theme(legend.position = 'bottom')
+  labs(x='Days between sampling points', y='Median Jaccard distance', color='') 
 ggsave('out/exploration/jaccard_time.png', dpi=600)
 
 # Pearsons correlation between median of distance between samples and time 
@@ -638,11 +637,11 @@ unifrac_w_time <- unifrac_w %>%
   group_by(person.x, fraction.y, diff) %>%
   summarise(median = median(value), .groups = 'drop')
 
-ggplot(unifrac_w_time, aes(x=diff, y=median, color=fraction.y)) +
+w_time <- ggplot(unifrac_w_time, aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), size = 3) +
-  labs(x='Days between sampling points', y='Median weighted UniFrac distance', color='Sample type')
+  labs(x='Days between sampling points', y='Median weighted UniFrac distance', color='')
 ggsave('out/exploration/weightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
 
@@ -734,7 +733,7 @@ unifrac_u_time <- unifrac_u %>%
   group_by(person.x, fraction.y, diff) %>%
   summarise(median = median(value), .groups = 'drop')
 
-ggplot(unifrac_u_time, aes(x=diff, y=median, color=fraction.y)) +
+u_time <- ggplot(unifrac_u_time, aes(x=diff, y=median, color=fraction.y)) +
   geom_point() +
   geom_smooth(method = 'lm') +
   stat_cor(method = 'pearson', aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~"))) +
@@ -746,6 +745,15 @@ ggsave('out/exploration/unweightedUnifrac_time.png', width = 24, height = 18, un
 ggarrange(bray_boxplot_all, jaccard_boxplot_all, unifracW_boxplot_all, unifracU_boxplot_all, 
           common.legend = TRUE, legend = 'bottom')
 ggsave('out/exploration/boxplot_all.png', dpi=600)
+
+# Supplement to figure 1 
+ggarrange(bray_boxplot_all, jaccard_boxplot_all, unifracW_boxplot_all, unifracU_boxplot_all, 
+          nrow = 2, ncol = 2, legend = 'bottom', common.legend = TRUE)
+ggsave('out/exploration/beta_distance_boxplots.png', dpi=600)
+
+ggarrange(b_time, j_time, w_time, u_time, nrow = 2, ncol = 2, 
+          legend = 'bottom', common.legend = TRUE)
+ggsave('out/exploration/beta_distance_time.png', dpi=600)
 
 # ##
 # # Generalized UniFrac
