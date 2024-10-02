@@ -219,6 +219,7 @@ mean_abund %>% left_join(results, by = c('person','name')) %>%
   labs(x = 'mean relative abundance', y= 'coefficient of variation')
 ggsave('out/exploration/CVvsRelabund.png', dpi = 600)
 
+
 # 2
 # relative abundances 
 otutab_rel = select(otutab_absrel, Group, name, rel_abund) %>%
@@ -269,13 +270,18 @@ otutabR %>%
        y = 'Relative abundance ') +
   facet_wrap(~person)
 ggsave('out/exploration/relabund_rescaledbyetOH_otu1.png', dpi = 600)
+
 # Plot top 5 OTUs in microbiota
 otutabR %>% 
   # right_join(corr_otus, by = c('person', 'name')) %>%
   filter(name %in% top5_micro$name & person != 'NA') %>%
   ggplot(aes(x = rescaled, y = value)) +
   geom_point() +
-  facet_grid(name~person, scales = 'free')
+  scale_x_log10() +
+  scale_y_log10() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x = 'log10(Rescaled relative abundance OTU in microbiota samples)', 
+       y = 'log10(Relative abundance in ethnol resistant fraction samples)')
 ggsave('out/exploration/relabund_rescaledbyetOH_top5micro.png', dpi = 600)
 
 # Plot top5 OTUs in ethanol resistant fraction
@@ -284,7 +290,11 @@ otutabR %>%
   filter(name %in% top5_etoh$name & person != 'NA') %>%
   ggplot(aes(x = rescaled, y = value)) +
   geom_point() +
-  facet_grid(name~person, scales = 'free')
+  scale_x_log10() +
+  scale_y_log10() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x = 'log10(Rescaled relative abundance OTU in microbiota samples)', 
+       y = 'log10(Relative abundance in ethnol resistant fraction samples)')
 ggsave('out/exploration/relabund_rescaledbyetOH_top5EtOh.png', dpi = 600)
 
 
@@ -325,7 +335,11 @@ otutabR3 %>%
   filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = rel_abund.x, y = rel_abund.y)) +
   geom_point() +
-  facet_grid(name~person, scales = 'free')
+  scale_x_log10() +
+  scale_y_log10() +
+  facet_grid(name~person, scales = 'free') +
+  labs(x = 'Relative abundance in microbiota samples', 
+       y = 'Relative abundance in ethanol resistant samples')
 ggsave('out/exploration/relative_relative_top5etoh.png', dpi = 600)
 
 # Rescaling the microbiota OTUs by the average relative abudnance in each sample OR in each OTU
@@ -481,9 +495,25 @@ otutabA %>%
   filter(name %in% top5_etoh$name) %>%
   ggplot(aes(x = norm_abund.x, y = norm_abund.y)) +
   geom_point(show.legend = FALSE) +
+  scale_x_log10() +
+  scale_y_log10() +
   facet_grid(name~person, scales = 'free') +
-  labs( x = 'Xi', y= 'Yi')
-ggsave('out/exploration/normAbund_normAbund_top5EtOH.png', dpi = 600)
+  labs( x = 'log10(Normalized abundance in microbiota samples)', 
+        y= 'log10(Normalized abundance in ethanol resistant samples)')
+ggsave('out/exploration/normAbund_normAbund_top5EtOH_log.png', dpi = 600)
+
+# top microbiota 
+# top 5 otus 
+otutabA %>%
+  filter(name %in% top5_micro$name) %>%
+  ggplot(aes(x = norm_abund.x, y = norm_abund.y)) +
+  geom_point(show.legend = FALSE) +
+  scale_x_log10() +
+  scale_y_log10() +
+  facet_grid(name~person, scales = 'free') +
+  labs( x = 'log10(Normalized abundance in microbiota samples)', 
+        y= 'log10(Normalized abundance in ethanol resistant samples)')
+ggsave('out/exploration/normAbund_normAbund_top5micro_log.png', dpi = 600)
 
 # Mean absolute abundance vs absolute abundance of an OTU
 mean_otu_abs = otutab_absrel %>%
@@ -755,10 +785,8 @@ otus <- var_host_population %>%
 ggsave('out/exploration/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 
-host_population <- ggarrange(individual, otus + rremove("ylab"), common.legend = FALSE, legend = 'right', 
-                             widths = c(1,1.5)) 
 #
-var_host %>%
+var_host_population %>%
   ggplot(aes(x = var_person/var_population)) +
   geom_density() +
   labs(x = 'Individual variance of log(mi/ni) / Population variance of log (mi/ni)', y = 'Density')
@@ -802,9 +830,11 @@ days <- otutabMN %>%
 ggsave('out/exploration/mini_days_person.png', dpi=600)
 
 
-# All plots figure 3 
-ggarrange(host_population, days, common.legend = FALSE, nrow = 2, 
-          heights = c(1.2, 1))
+# All plots figure 3
+host_population <- ggarrange(individual + labs(tag = 'B'), otus + rremove("ylab") + labs(tag = 'C'), common.legend = FALSE, legend = 'right', 
+                             widths = c(1,1.5)) 
+ggarrange(days + labs(tag = 'A'), host_population, common.legend = FALSE, nrow = 2, 
+          heights = c(1, 1))
 ggsave('out/exploration/varhost_varpopulation_all3.png', dpi=600)
 
 
