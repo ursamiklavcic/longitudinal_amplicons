@@ -7,8 +7,69 @@ otu_all %>%
   filter(value > 0) %>%
   group_by(fraction) %>%
   summarise(otus = n_distinct(name))
-  
+
+# The same code as in 3_beta.R 
+otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
+  pivot_longer(cols = starts_with('Otu')) %>%
+  left_join(metadata %>% select(original_sample, Group, person), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value)) %>%
+  ungroup() %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate(norm_abund = rel_abund * copies) %>%
+  select(Group, name, value, original_sample, person, norm_abund, rel_abund) %>%
+  left_join(taxtab, by = 'name')
+
+otu_etoh <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                      otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
+                      by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
+  mutate(y = ifelse(value.y > 0 & value.x > 0, 'Yes', 'No')) %>%
+  filter(y == 'Yes') %>%
+  #filter(norm_abund.x > 0 & norm_abund.y > 0) %>%
+  #mutate(fraction = value.y/(value.y + value.x)) %>%
+  #filter(fraction > 0.5) %>%
+  pull(unique(name))
+
+non_etoh <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
+  mutate(Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
+etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
+  filter(Phylum != 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-EO"), fraction = 'Other ethanol resistant OTUs')
+etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
+non_etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
+
+otu_all <- rbind(non_etoh, etoh_other, etoh_firm, non_etoh_firm)
+otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
+  select(Group,fraction)
+####
+
+# read otutab 
+otutab <- readRDS('data/r_data/otutab_all_fractions.RDS')
+metadata <- readRDS('data/r_data/metadata.RDS')
+
 # Bray-Curtis
+dist_bray <- vegdist(otutab, method = 'bray')
+
+bray <- as.matrix(dist_bray) %>% 
+  as_tibble(rownames = 'Group') %>%
+  pivot_longer(-Group) %>%
+  filter(Group != name) %>%
+  left_join(otu_fraction, by = 'Group') %>%
+  left_join(otu_fraction, by = join_by('name' == 'Group')) %>%
+  mutate(Group_clean = str_remove(Group, "-.*$"), 
+         name_clean = str_remove(name, '-.*$')) %>%
+  left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
+  left_join(metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
+         same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
+  filter(same_fraction == 'Yes')
+
+bray$fraction.y <- factor(bray$fraction.y , levels = c("Non-ethanol resistant OTUs", 'Non-ethanol resistant Bacillota',  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
+
 # Function to perform OTU resampling within fractions and recalculate Bray-Curtis and ANOSIM
 bootstrap_anosim_bray <- function(otu_all, otu_fraction, metadata, n_iterations = 1000) {
   set.seed(96)  
@@ -123,8 +184,8 @@ boxplot_bray <- bray %>%
   filter(fraction.y != 'Non-ethanol resistant Bacillota') %>%
   ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
   geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance = ', scales::scientific(significance, digits = 3), ', sd = ', scales::scientific(sd_significance, digits = 3))), size = 3 ,hjust = 'left') +
-  geom_text(data = anotate, aes(y = 1, label = paste('R = ', scales::scientific(statistic, digits = 3),  ', sd = ', scales::scientific(sd_statistic, digits = 3))), size = 3, hjust = 'left') +
+  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance = ', scales::scientific(significance, digits = 2), ', sd = ', scales::scientific(sd_significance, digits = 2))), size = 3 ,hjust = 'left') +
+  geom_text(data = anotate, aes(y = 1, label = paste('R = ', scales::scientific(statistic, digits = 2),  ', sd = ', scales::scientific(sd_statistic, digits = 2))), size = 3, hjust = 'left') +
   labs(y='Bray-Curtis distances', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom') +
   facet_grid(~same_person) 
