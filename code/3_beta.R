@@ -858,8 +858,8 @@ core_all <- unnest(core_otus, name) %>%
   mutate(percent = number_otus/sum(number_otus)*100)
 
 ggplot(core_all, aes(x = fraction, y = percent, 
-                     fill = ifelse(sum_all > 3, 'Shared between more than 3 individuals',
-                                   'Shared between 3 or less individuals'))) +
+                     fill = ifelse(sum_all > 2, 'Shared between more than 2 individuals',
+                                   'Shared between 2 or less individuals'))) +
   geom_bar(stat = 'identity') +
   labs(x = '', y = 'Percent of OTUs shared between individuals', fill = '') +
   theme(legend.position = 'bottom')
@@ -869,9 +869,42 @@ core_all %>%
   group_by(fraction) %>%
   mutate(percent_100 = percent/sum(percent)) %>%
   ggplot(aes(x = fraction, y = percent_100, 
-                     fill = ifelse(sum_all > 3, 'Shared between more than 3 individuals',
-                                   'Shared between 3 or less individuals'))) +
+                     fill = ifelse(sum_all > 2, 'Shared between more than 2 individuals',
+                                   'Shared between 2 or less individuals'))) +
   geom_bar(stat = 'identity') +
   labs(x = '', y = 'Percent of OTUs shared between individuals', fill = '') +
   theme(legend.position = 'bottom')
 ggsave('out/exploration/core_otus_percent100.png', dpi= 600)
+
+core_all %>%
+  mutate(is_ethanol_resistant = ifelse(fraction == 'Ethanol resistant Bacillota' | fraction == 'Other ethanol resistant OTUs', 
+                                       'Ethanol resistant', 'Non-ethanol resistant'),
+         shared = ifelse(sum_all == 1, 'Single individual', 'Shared'))  %>%
+  group_by(is_ethanol_resistant) %>%
+  mutate(percent_100 = percent/sum(percent)) %>%
+  ggplot(aes(x = is_ethanol_resistant, y = percent_100, 
+             fill = ifelse(sum_all == 1, 'Present in a single individual',
+                           'Shared between individuals'))) +
+  geom_bar(stat = 'identity') +
+  labs(x = '', y = '[OTUs]%', fill = '') +
+  theme(legend.position = 'bottom')
+ggsave('out/exploration/shared_ethn_or_not.png', dpi= 600)
+
+# 
+# Create contingency table for Fisher's Exact Test
+otu_table <- core_all %>%
+  mutate(is_ethanol_resistant = ifelse(fraction == 'Ethanol resistant Bacillota' | fraction == 'Other ethanol resistant OTUs', 'Ethanol Resistant', 'Non-Ethanol Resistant'),
+         shared = ifelse(sum_all == 1, 'Single individual', 'Shared')) %>%
+  group_by(is_ethanol_resistant, shared) %>%
+  summarise(count = sum(number_otus), .groups = 'drop') %>%
+  pivot_wider(names_from = shared, values_from = count, values_fill = 0)
+
+
+# Create the matrix for Fisher's Exact Test
+otu_matrix <- column_to_rownames(otu_table, 'is_ethanol_resistant') %>% as.matrix()
+# Fisher's Exact Test
+fisher_test <- fisher.test(otu_matrix)
+
+# Output the result
+fisher_test
+
