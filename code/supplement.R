@@ -17,15 +17,11 @@ otu_rel %>%
   group_by(biota) %>%
   mutate(x = (rel_abund / sum(rel_abund)) * 100 ) %>%
   ungroup() %>%
-  mutate(Class = ifelse(rel_abund > 0.01, Class, 'Less than 0.01%')) %>%
+  mutate(Class = ifelse(x > 0.01, Class, 'Less than 0.01%')) %>%
   ggplot(aes(x = biota, y = x, fill = Class)) +
   geom_bar(stat = 'identity') +
   labs(x = '', y = 'Relative abundance aggregated across individuals')
 ggsave('out/exploration/relabund_fractions.png', dpi = 600)
-
-
-
-
 
 otutab_all <- readRDS('data/r_data/otutab_all_fractions.RDS')
 
