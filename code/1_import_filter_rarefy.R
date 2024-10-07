@@ -113,6 +113,11 @@ etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %
   mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
 saveRDS(etoh_firm, 'data/r_data/etoh_otus_Bacillota.RDS')
 
+non_etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
+  filter(Phylum == 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
+saveRDS(non_etoh_firm, 'data/r_data/non_etoh_firm.RDS')
+
 otu_all <- rbind(non_etoh, etoh_other, etoh_firm)
 otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
   select(Group,fraction)
