@@ -221,6 +221,64 @@ seq_metadata = read.csv('data/metadata.csv', sep=';') %>%
 tree = ape::drop.tip(phy=tree_pre, 
                      tip=setdiff(tree_pre$tip.label, colnames(seqtab)))
 
+
+# Fractions 
+seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
+  pivot_longer(cols = starts_with('V')) %>%
+  left_join(seq_metadata %>% select(original_sample, Group, person), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value), 
+         PA = ifelse(value > 0, 1, 0)) %>%
+  ungroup() %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate(norm_abund = rel_abund * copies) %>%
+  select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA) %>%
+  left_join(seq_taxtab %>% rownames_to_column('name'), by = 'name')
+
+seq_etoh_names <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                            seq_long %>% filter(substr(Group, 1, 1) == 'S'), by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
+  mutate(etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
+  group_by(name) %>%
+  reframe(no_PA = sum(PA.x), 
+          no_Yes = ceiling(sum(etoh_resistant == 'Yes', na.rm = TRUE) / 0.1)) %>%
+  ungroup() %>%
+  filter(no_PA <= no_Yes) %>%
+  #filter(etoh_resistant == 'Yes') %>%
+  pull(unique(name))
+
+# Non-ethanol resistant sequences
+seq_etoh <- filter(seq_long, substr(Group, 1, 1) == 'M') %>%
+  mutate(value = ifelse(name %in% seq_etoh_names & Phylum != 'Firmicutes', value, 0), 
+         rel_abund = ifelse(name %in% seq_etoh_names & Phylum != 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(name %in% seq_etoh_names & Phylum != 'Firmicutes', norm_abund, 0),
+         PA = ifelse(name %in% seq_etoh_names & Phylum != 'Firmicutes', PA , 0), 
+         Group = paste0(Group, "-E"), fraction = 'Ethanol resistant OTUs')
+
+seq_non_etoh <- filter(seq_long, substr(Group, 1, 1) == 'M') %>%
+  mutate(value = ifelse(!(name %in% seq_etoh_names) & Phylum != 'Firmicutes', value, 0), 
+         rel_abund = ifelse(!(name %in% seq_etoh_names) & Phylum != 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(!(name %in% seq_etoh_names) & Phylum != 'Firmicutes', norm_abund, 0),
+         PA = ifelse(!(name %in% seq_etoh_names) & Phylum != 'Firmicutes', PA , 0), 
+         Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
+
+seq_etoh_bacillota <- filter(seq_long, substr(Group, 1, 1) == 'M') %>%  
+  mutate(value = ifelse(name %in% seq_etoh_names & Phylum == 'Firmicutes', value, 0), 
+         rel_abund = ifelse(name %in% seq_etoh_names & Phylum == 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(name %in% seq_etoh_names & Phylum == 'Firmicutes', norm_abund, 0),
+         PA = ifelse(name %in% seq_etoh_names & Phylum == 'Firmicutes', PA , 0), 
+         Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
+
+seq_non_etoh_bacillota <- filter(seq_long, substr(Group, 1, 1) == 'M') %>%
+  mutate(value = ifelse(!(name %in% seq_etoh_names) & Phylum == 'Firmicutes', value, 0), 
+         rel_abund = ifelse(!(name %in% seq_etoh_names) & Phylum == 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(!(name %in% seq_etoh_names) & Phylum == 'Firmicutes', norm_abund, 0),
+         PA = ifelse(!(name %in% seq_etoh_names) & Phylum == 'Firmicutes', PA , 0),
+         Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
+
+seq_all <- rbind(seq_etoh, seq_non_etoh, seq_etoh_bacillota, seq_non_etoh_bacillota)
+
+
+saveRDS(seq_all, 'data/r_data/seq_all.RDS')
 saveRDS(seqtab, 'data/r_data/seqtab.RDS')
 saveRDS(seq_taxtab, 'data/r_data/seq_taxtab.RDS')
 saveRDS(seq_metadata, 'data/r_data/seq_metadata.RDS')
@@ -239,7 +297,3 @@ rm(min_seqs)
 rm(min_seqs_per_otu)
 rm(otu_names)
 rm(reads_per_sample)
-
-# Data saved in data/r_data as RDS objects & as basic_data.R (enviroment)
-save.image('data/r_data/basic_data.R')
-
