@@ -15,6 +15,8 @@ library(lubridate)
 
 set.seed(96)
 
+ddPCR <- readRDS('data/r_data/ddPCR.RDS')
+
 # Exploration
 shared = read_tsv('data/mothur/final.opti_mcc.shared') %>%
   select(Group, starts_with('Otu')) %>%
@@ -78,54 +80,66 @@ saveRDS(metadata, 'data/r_data/metadata.RDS')
 # OTUs
 otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
   pivot_longer(cols = starts_with('Otu')) %>%
-  left_join(metadata %>% select(original_sample, Group, person), by = 'Group') %>%
+  left_join(metadata %>% select(original_sample, Group, person, day), by = 'Group') %>%
   group_by(Group) %>%
-  mutate(rel_abund = value / sum(value)) %>%
+  mutate(rel_abund = value / sum(value), 
+         PA = ifelse(value > 0, 1, 0)) %>%
   ungroup() %>%
   left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
   mutate(norm_abund = rel_abund * copies) %>%
-  select(Group, name, value, original_sample, person, norm_abund, rel_abund) %>%
+  select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, day) %>%
   left_join(taxtab, by = 'name')
+saveRDS(otu_long, 'data/r_data/otu_long.RDS')
 
 otu_etoh <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
                       otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
                       by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  mutate(y = ifelse(value.y > 0 & value.x > 0, 'Yes', 'No')) %>%
-  filter(y == 'Yes') %>%
-  #filter(norm_abund.x > 0 & norm_abund.y > 0) %>%
-  #mutate(fraction = value.y/(value.y + value.x)) %>%
-  #filter(fraction > 0.5) %>%
+  mutate(etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
+  group_by(name) %>%
+  reframe(no_PA = sum(PA.x), 
+          no_Yes = ceiling(sum(etoh_resistant == 'Yes', na.rm = TRUE) / 0.1)) %>%
+  ungroup() %>%
+  filter(no_PA <= no_Yes) %>%
+  #filter(etoh_resistant == 'Yes') %>%
   pull(unique(name))
-
 saveRDS(otu_etoh, 'data/r_data/etoh_otus.RDS')
 
-non_etoh <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
-  mutate(Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
+# Ethanol resistant OTUs AND non-ethanol resistant OTUs 
+etoh <- filter(otu_long, substr(Group, 1, 1) == 'M') %>%
+  mutate(value = ifelse(name %in% otu_etoh & Phylum != 'Firmicutes', value, 0), 
+         rel_abund = ifelse(name %in% otu_etoh & Phylum != 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(name %in% otu_etoh & Phylum != 'Firmicutes', norm_abund, 0),
+         PA = ifelse(name %in% otu_etoh & Phylum != 'Firmicutes', PA , 0), 
+         Group = paste0(Group, "-E"), fraction = 'Ethanol resistant OTUs')
+saveRDS(etoh, 'data/r_data/etoh_otus_long.RDS')
+
+non_etoh <- filter(otu_long, substr(Group, 1, 1) == 'M') %>%
+  mutate(value = ifelse(!(name %in% otu_etoh) & Phylum != 'Firmicutes', value, 0), 
+         rel_abund = ifelse(!(name %in% otu_etoh) & Phylum != 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(!(name %in% otu_etoh) & Phylum != 'Firmicutes', norm_abund, 0),
+         PA = ifelse(!(name %in% otu_etoh) & Phylum != 'Firmicutes', PA , 0), 
+         Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
 saveRDS(non_etoh, 'data/r_data/nonetoh_otus.RDS')
 
-etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
-  filter(Phylum != 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-EO"), fraction = 'Other ethanol resistant OTUs')
-saveRDS(etoh_other, 'data/r_data/etoh_otus_other.RDS')
+# At the level of Bacillota 
+etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M') %>%  
+  mutate(value = ifelse(name %in% otu_etoh & Phylum == 'Firmicutes', value, 0), 
+         rel_abund = ifelse(name %in% otu_etoh & Phylum == 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(name %in% otu_etoh & Phylum == 'Firmicutes', norm_abund, 0),
+         PA = ifelse(name %in% otu_etoh & Phylum == 'Firmicutes', PA , 0), 
+         Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
+saveRDS(etoh_bacillota, 'data/r_data/etoh_otus_Bacillota.RDS')
 
-etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
-  filter(Phylum == 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
-saveRDS(etoh_firm, 'data/r_data/etoh_otus_Bacillota.RDS')
+non_etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M') %>%
+  mutate(value = ifelse(!(name %in% otu_etoh) & Phylum == 'Firmicutes', value, 0), 
+         rel_abund = ifelse(!(name %in% otu_etoh) & Phylum == 'Firmicutes', rel_abund, 0),
+         norm_abund = ifelse(!(name %in% otu_etoh) & Phylum == 'Firmicutes', norm_abund, 0),
+         PA = ifelse(!(name %in% otu_etoh) & Phylum == 'Firmicutes', PA , 0),
+         Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
+saveRDS(non_etoh_bacillota, 'data/r_data/non_etoh_firm.RDS')
 
-non_etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
-  filter(Phylum == 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
-saveRDS(non_etoh_firm, 'data/r_data/non_etoh_firm.RDS')
-
-otu_all <- rbind(non_etoh, etoh_other, etoh_firm)
-otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
-  select(Group,fraction)
-
-otutab <- select(otu_all, Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  column_to_rownames('Group')
-saveRDS(otutab, 'data/r_data/otutab_all_fractions.RDS')
+otu_all_long <- rbind(non_etoh, etoh, etoh_bacillota, non_etoh_bacillota)
+saveRDS(otu_all_long, 'data/r_data/otutab_long_fractions.RDS')
 
 # Phylogenetic analysis 
 # Load tree file from mafft 
