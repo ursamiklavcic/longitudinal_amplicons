@@ -10,20 +10,140 @@ library(tidyverse)
 library(vegan)
 library(ape)
 library(ggpubr)
-library(phyloseq)
 
 set.seed(96)
 theme_set(theme_bw())
-load("~/projects/longitudinal_amplicons/data/r_data/basic_data.RData")
 
-# Colors 
-cole=c('#47B66A') # yellow
-colm=c('#D9A534') # green
-colem= c('#47B66A', '#D9A534')
+col2 = c('#0f9b48', '#0f80c5')
 
-##
-# Compositon 
-##
+# Data 
+otutabEM <- readRDS('data/r_data/otutabEM.RDS')
+otu_long = readRDS('data/r_data/otu_long.RDS')
+metadata <- readRDS('data/r_data/metadata.RDS')
+taxtab <- readRDS('data/r_data/taxtab.RDS')
+
+otu_etoh <- readRDS('data/r_data/etoh_otus.RDS') 
+otu_all <- readRDS('data/r_data/otutab_long_fractions.RDS')
+
+# Composition of ethanol resistant fraction and non-ethanol resistant fraction in numbers
+# Number of unique OTUs detected in this study 
+otu_long %>%
+  filter(PA == 1) %>%
+  summarise(no_otus = n_distinct(name))
+# we found 2574 OTUs in both types of samples 
+otu_long %>%
+  filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
+  summarise(no_otus = n_distinct(name))
+# In bulk microbiota samples only 2433!; 141 OTus were found only in ethanol resistant samples! 
+otu_long %>%
+  filter(substr(Group, 1, 1) == 'S' & PA == 1) %>%
+  summarise(no_otus = n_distinct(name))
+# in ethnanol resistant samples we found 1864 unique OTUs. 
+
+# Number of OTUs detected in both microbiota and ethanol resistant fraction
+otu_long_both <- otu_long %>% filter(substr(Group, 1, 1) == 'M') %>%
+  full_join(filter(otu_long, substr(Group, 1, 1) == 'S'), by = join_by('name', 'person', 'day', 'original_sample', 'Domain', 'Phylum', 'Class', 'Family', 'Order', 'Genus')) 
+
+otu_long_both %>%
+  filter(PA.x == 1 & PA.y == 1) %>%
+  summarize(no_otus = n_distinct(name)) 
+# In both samples we detected 1475 unique OTUs
+
+# By individual 
+# Unique OTUs in each individal 
+n_person <- otu_long %>%
+  filter(PA == 1) %>%
+  group_by(person) %>%
+  summarise(no_otus = n_distinct(name))
+# both and all 
+per_person <- otu_long_both %>%
+  filter(PA.x == 1 & PA.y == 1) %>%
+  group_by(person) %>%
+  summarize(no_otus_both = n_distinct(name)) %>%
+  left_join(n_person, by = 'person') %>%
+  mutate(percent = (no_otus_both/no_otus)*100)
+
+min(per_person$percent) 
+max(per_person$percent) 
+mean(per_person$percent) 
+
+# Number of OTUs bellonging to any one phylum 
+otu_long %>%
+  filter(substr(Group, 1, 1) == 'M') %>%
+  group_by(Phylum) %>%
+  summarise(x = sum(value), .groups = 'drop') %>%
+  mutate(per = x/sum(x)*100)
+  
+# Number of OTUs beloging to phyla in ethanol resistant samples
+otu_long %>%
+  filter(substr(Group, 1, 1) == 'S') %>%
+  group_by(Phylum) %>%
+  summarise(x = sum(value), .groups = 'drop') %>%
+  mutate(per = x/sum(x)*100)
+
+# What percentage of relative abundance are OTUs that are ethanol resistant ? 
+# In each phyla ? 
+otutab_all <- otu_long %>%
+  filter(substr(Group, 1, 1) == 'M') %>%
+  mutate(fraction = ifelse(name %in% otu_etoh, 'Ethanol resistant fraction', 'Non-ethanol resistant fraction'), 
+         bacillota = ifelse(name %in% otu_etoh & Phylum == 'Firmicutes', 'Ethanol resistant Bacillota', 
+                            ifelse(!(name %in% otu_etoh) & Phylum == 'Firmicutes', 'Non-ethanol resistant Bacillota', 'Other')) )
+#
+otutab_all %>%
+  filter(PA == 1) %>%
+  group_by(fraction) %>%
+  summarise(no_otus = n_distinct(name))
+
+120/2313 # 5.1 % # 0.3
+264/2169 # 12.2 % # 0.1
+
+#
+otutab_plots <- otutab_all %>%
+  mutate(phylum = ifelse(Phylum %in% c('Firmicutes', 'Bacteroidetes', 'Actinobacteria', 'Proteobacteria', 'Bacteria_unclassified'), Phylum, 'Other')) %>%
+  mutate(phylum = recode(phylum, 'Firmicutes' = 'Bacillota', 'Bacteroidetes' = 'Bacteroidota', 'Actinobacteria' = 'Actinomycetota', 
+                         'Proteobacteria' = 'Pseudomonadota', 'Bacteria_unclassified' = 'unclassified Bacteria'))
+
+otutab_plots$phylum <- factor(otutab_plots$phylum, levels = c('Bacillota', 'Bacteroidota', 'Actinomycetota', 'Pseudomonadota', 'unclassified Bacteria', 'Other'))
+
+relative <- otutab_plots %>%
+  ggplot(aes(x = phylum, y = rel_abund, fill = fraction)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  scale_fill_manual(values = col2) +
+  labs(x = '', y = 'log10(relative abundance)', fill = '') +
+  theme(legend.position = 'bottom', 
+        axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0, 0.2, 0.2, 0), "cm"))
+
+# The number of unique OTUs in each phylum 
+number <- otutab_plots %>%
+  group_by(fraction, phylum) %>%
+  reframe(no_otus = n_distinct(name), sum_value = sum(value)) %>%
+  ungroup() %>%
+  group_by(fraction) %>%
+  mutate(per = sum_value/sum(sum_value)*100) %>%
+  ungroup() %>%
+  ggplot(aes(x = phylum, y = no_otus, fill = fraction)) +
+  geom_col(position = position_dodge()) +
+  geom_text(aes(label = paste(no_otus, '\n', round(per, digits = 1), '%'), 
+                vjust = ifelse(no_otus > 1000, 1.1, -0.2)), size = 3, 
+            position = position_dodge(width = 0.9), ) +
+  scale_fill_manual(values = col2) +
+  coord_cartesian(ylim = c(0, 1700)) +
+  labs(x = '', y = 'Unique OTUs', fill = '') +
+  theme(legend.position = 'bottom', 
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(), 
+        # margin(t, r, l, b)
+        plot.margin = unit(c(0.1, 0.2, 0.2, 0), "cm"))
+
+ggarrange(number + labs(tag = 'A'),
+          relative + labs(tag = 'B'), 
+          nrow = 2, common.legend = TRUE, legend = 'bottom', align = 'v', heights = c(0.8, 1))
+ggsave('out/exploration/figure1.png', dpi=600)
+
+
+# Other stuff 
 
 # How to best show differences between absolute and relative abundances?
 # Which classes of Bacteria do I want to show? 
@@ -72,7 +192,7 @@ abs_plot = otutab_absrel_long %>%
   filter(level == 'Class') %>%
   mutate(taxon_fin = ifelse(taxon %in% classes, taxon, 'Other')) %>%
   group_by(biota, person, taxon_fin) %>%
-  summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
+  summarize(abssum = sum(norm_abund), .groups = 'drop') %>%
   mutate(percent = (abssum/sum(abssum))*100) %>%
   ggplot(aes(x = person, y = percent, fill = taxon_fin)) +
   geom_bar(stat = 'identity') +
@@ -82,7 +202,7 @@ abs_plot = otutab_absrel_long %>%
 ggarrange(rel_plot, abs_plot, 
           common.legend = TRUE, 
           legend = 'right')
-ggsave('out/ethanol_resistantVSmicrobiota/rel_abs_barplot.png', dpi=600)
+ggsave('out/EtOH_bulk/rel_abs_barplot.png', dpi=600)
 
 # Relative and absolute abundance of mian Genera in Firmicutes in microbiota and EtOH resistant fraction
 rel_fimicutes = otutabEM %>% as.data.frame() %>%
@@ -107,7 +227,7 @@ abs_firmicutes = otutab_absrel %>%
   filter(Phylum == 'Firmicutes') %>%
   left_join(metadata, by = 'Group') %>%
   group_by(biota, person, Genus) %>%
-  summarize(abssum = sum(abs_abund_ng), .groups = 'drop') %>%
+  summarize(abssum = sum(norm_abund), .groups = 'drop') %>%
   group_by(biota, person) %>%
   mutate(percent = (abssum/sum(abssum))*100, 
          genus_fin = ifelse(percent > 5, Genus, 'Less than 5%')) %>%
@@ -119,29 +239,8 @@ abs_firmicutes = otutab_absrel %>%
 ggarrange(rel_fimicutes, abs_firmicutes, 
           common.legend = TRUE, 
           legend = 'right')
-ggsave('out/ethanol_resistantVSmicrobiota/rel_abs_firmicutes.png', dpi=600)
+ggsave('out/EtOH_bulk/rel_abs_firmicutes.png', dpi=600)
 
-# Composition of ethanol resistant fraction 
-otutab_explore = otutabEM %>% as.data.frame() %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  left_join(taxtab, by = 'name') %>%
-  left_join(metadata, by = 'Group')
-
-otutab_explore %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value / sum(value)) %>%
-  filter(Phylum == 'Actinobacteria') %>%
-  ggplot(aes (x = biota, y = rel_abund, fill = Family)) +
-  geom_bar(stat = 'identity')
-
-otutab_explore %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value / sum(value)) %>%
-  ungroup() %>%
-  group_by(biota, Family) %>%
-  summarise(sum= sum(rel_abund)) %>%
-  print(n = 144)
 
 # Core community analysis 
 # Core OTUs are those present in at least 11 time-points, irregardles of their relative or absolute abundance
