@@ -6,7 +6,6 @@ library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1
 library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
 library(tidyverse)
 library(vegan)
-library(ape)
 library(ggpubr)
 library(scales)
 library(phyloseq)
@@ -14,6 +13,7 @@ library(phyloseq)
 set.seed(96)
 theme_set(theme_bw())
 
+otu_all_long <- readRDS('data/r_data/otutab_long_fractions.RDS')
 metadata = readRDS('data/r_data/metadata.RDS')
 taxtab = readRDS('data/r_data/taxtab.RDS')
 
@@ -22,30 +22,28 @@ seq_metadata = readRDS('data/r_data/seq_metadata.RDS')
 seq_taxtab = readRDS('data/r_data/seq_taxtab.RDS')
 tree = readRDS('data/r_data/tree.RDS')
 
+# Distribution of OTUs
+otu_all_long %>%
+  ggplot(aes(x = rel_abund, fill = fraction)) +
+  geom_histogram() +
+  scale_x_log10()
 
-# 
-otu_all <- readRDS('data/r_data/otutab_long_fractions.RDS')
 # Prepare the data 
-otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
+otu_fraction <- distinct(otu_all_long, Group, .keep_all = TRUE) %>%
   select(Group,fraction)
 
-otutab <- otu_all %>%
+otutab <- otu_all_long %>%
   select(Group, name, value) %>%
   pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
 min <- otu_all_long %>%
+  filter(PA == 1) %>%
   group_by(fraction) %>%
   summarise(sum= n_distinct(name)) %>%
   ungroup() %>%
   summarise(min = min(sum) - 5) %>%
   pull(min)
-
-# # Distribution of OTUs 
-# otu_all_long %>%
-#   ggplot(aes(x = rel_abund, fill = fraction)) +
-#   geom_histogram() +
-#   scale_x_log10()
 
 # Functions 
 calculate_dist <- function(otutab, min_samples, method) {
@@ -74,10 +72,10 @@ calculate_dist <- function(otutab, min_samples, method) {
 
 # ANOSIM 
 calculate_anosim <- function(data, condition, fractions) {
-  filtered_data <- filter(bray, same_person == condition & fraction.x %in% fractions) %>%
+  filtered_data <- filter(data, same_person == condition & fraction.x %in% fractions) %>%
     distinct(Group, .keep_all = TRUE)
   
-  dist_matrix <- filter(bray, same_person == condition & fraction.x %in% fractions) %>%
+  dist_matrix <- filter(data, same_person == condition & fraction.x %in% fractions) %>%
     select(Group, name, mean_value) %>%
     pivot_wider(names_from = 'name', values_from = 'mean_value', values_fill = 1) %>%
     column_to_rownames('Group') %>%
@@ -88,6 +86,7 @@ calculate_anosim <- function(data, condition, fractions) {
 
 # Bray-Curtis
 # Perform resampling and calculate Bray-Curtis distances
+dist_all <- data.frame()
 dist_bray <- calculate_dist(otutab, min, 'bray')
 
 # Calculate mean and median distance values
@@ -264,6 +263,7 @@ cor.test(as.numeric(time_etoh_firm$diff), time_etoh_firm$median, method='pearson
 
 # Jaccard
 # Perform resampling and calculate Jaccard distances
+dist_all <- data.frame()
 dist_jaccard <- calculate_dist(otutab, min, 'jaccard')
 
 # Calculate mean and median distance values
@@ -440,62 +440,121 @@ time_etoh_firm <- filter(time_jaccard, fraction.y == 'Ethanol resistant Bacillot
 cor.test(as.numeric(time_etoh_firm$diff), time_etoh_firm$median, method='pearson')
 # # Positive correlation 0.024, not significant
 
-
-
-##
+####
 # Sequences 
-seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
-  pivot_longer(cols = starts_with('V')) %>%
-  left_join(seq_metadata %>% select(original_sample, Group, person), by = 'Group') %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value / sum(value)) %>%
+
+seq_all <- readRDS('data/r_data/seq_all.RDS') 
+seq_fraction <- select(seq_all, Group, fraction) %>%
+  unique()
+
+min <- seq_all %>%
+  filter(PA == 1) %>%
+  group_by(fraction) %>%
+  summarise(sum= n_distinct(name)) %>%
   ungroup() %>%
-  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-  mutate(norm_abund = rel_abund * copies) %>%
-  select(Group, name, value, original_sample, person, norm_abund) %>%
-  left_join(seq_taxtab %>% rownames_to_column('name'), by = 'name')
+  summarise(min = min(sum) - 5) %>%
+  pull(min)
 
-seq_etoh <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                      seq_long %>% filter(substr(Group, 1, 1) == 'S'), by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  filter(norm_abund.x > 0 & norm_abund.y > 0) %>%
-  mutate(fraction = value.y/(value.y + value.x)) %>%
-  filter(fraction > 0.5) %>%
-  pull(unique(name))
-
-# Non-ethanol resistant sequences
-seq_non_etoh <- filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% seq_etoh)) %>%
-  mutate(Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
-  
-# Ethanol resistant OTUs (not Bacillota)
-seq_etoh_other <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% seq_etoh) %>% 
-  filter(Phylum != 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-EO"), fraction = 'Other ethanol resistant OTUs')
-
-# Ethanol resistant Bacillota
-seq_etoh_firm <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% seq_etoh) %>%
-  filter(Phylum == 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
-
-# Non-ethanol resistant Bacillota 
-seq_non_etoh_firm <- filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% seq_etoh)) %>% 
-  filter(Phylum == 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
-
-seq_all <- rbind(seq_non_etoh, seq_etoh_other, seq_etoh_firm, seq_non_etoh_firm)
-fraction_all <- distinct(seq_all, Group, .keep_all = TRUE) %>%
-  select(Group,fraction)
-  
-tab_all <- select(seq_all, Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
+tab_all <- select(seq_all, Group, name, rel_abund) %>%
+  pivot_wider(names_from = 'name', values_from = 'rel_abund', values_fill = 0) %>%
   column_to_rownames('Group')
 
-ps_all = phyloseq(otu_table(as.matrix(tab_all), taxa_are_rows = FALSE), 
-                  tax_table(as.matrix(seq_taxtab)), 
-                  phy_tree(tree))
+# Function to calculate UniFrac 
+calculate_unifrac <- function(seq_tab, min_samples, method) {
+  dist_all <- data.frame()
+  
+  for (i in 1:999) {
+    # Resample OTUs within each fraction
+    tab_t <- t(seq_tab)
+    resampled_t <- tab_t[sample(1:ncol(tab_t), size = min_samples, replace = TRUE), ]
+    tab <- t(resampled_t)
+    tab <- tab[, !duplicated(colnames(tab))]
+    
+    # Create phyloseq object 
+    ps_all <- phyloseq(otu_table(as.matrix(tab), taxa_are_rows = FALSE), 
+                       tax_table(as.matrix(seq_taxtab)), 
+                       phy_tree(tree))
+    # Calculate distances 
+    dist <- UniFrac(ps_all, weighted = method, normalized = TRUE)
+    
+    # Tidy the Bray-Curtis matrix
+    dist_long <- as.data.frame(as.matrix(dist)) %>%
+      rownames_to_column('Group') %>%
+      pivot_longer(-Group) %>%
+      filter(Group != name) 
+    
+    dist_all <- rbind(dist_all, dist_long)
+    
+  }
+  
+  dist_all
+}
 
 ##
 # weighted UniFrac
-dist_w <- UniFrac(ps_all, weighted = TRUE, normalized = TRUE)
+dist_all <- data.frame()
+unifrac_w <- calculate_unifrac(tab_all, min, TRUE)
+
+dist_w <- dist_all %>%
+  mutate(sample_pairs = paste(Group, name)) %>%
+  group_by(sample_pairs) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), 
+            median_value = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE), .groups = 'drop') %>%
+  ungroup()
+
+unifrac_w <- dist_w %>%
+  separate(sample_pairs, into = c("Group", "name"), sep = " ") %>%
+  left_join(seq_fraction, by = 'Group') %>%
+  left_join(seq_fraction, by = join_by('name' == 'Group')) %>%
+  mutate(Group_clean = str_remove(Group, "-.*$"),
+         name_clean = str_remove(name, '-.*$')) %>%
+  left_join(seq_metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
+  left_join(seq_metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'),
+         same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
+  filter(same_fraction == 'Yes')
+
+unifrac_w$fraction.y = factor(unifrac_w$fraction.y, levels = levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
+                                                                        'Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
+
+# ANOSIM 
+# within
+within_bacillota <- calculate_anosim(unifrac_w, condition = 'Within individual', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
+
+within_other <- calculate_anosim(unifrac_w, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
+
+# between 
+between_bacillota <- calculate_anosim(unifrac_w, condition = 'Between individuals', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
+
+between_other <- calculate_anosim(unifrac_w, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
+
+# Combine all results
+anosim_unifrac_w <- data.frame(
+  same_person = c('Within individual', 'Within individual', 'Between individuals', 'Between individuals'),
+  fraction.y = c('Ethanol resistant Bacillota', 'Ethanol resistant OTUs', 'Ethanol resistant Bacillota', 'Ethanol resistant OTUs'), 
+  R = c(within_bacillota$statistic, 
+        within_other$statistic, 
+        between_bacillota$statistic, 
+        between_other$statistic),
+  p = c(within_bacillota$signif, 
+        within_other$signif, 
+        between_bacillota$signif, 
+        between_other$signif))
+
+unifracW_boxplot <- unifrac_w %>%
+  ggplot(aes(x=fraction.y, y=mean_value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anosim_unifrac_w, aes(y = 0.96, x = fraction.y, label = paste('p = ', round(p, 3))), size = 3, hjust = -0.65) +
+  geom_text(data = anosim_unifrac_w, aes(y = 0.99, x = fraction.y, label = paste('R = ', scientific(R, 2))), size = 3, hjust = -0.4) +
+  labs(y='weighted UniFrac distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  guides(fill = guide_legend(ncol = 2)) +
+  facet_grid(~same_person) 
+unifracW_boxplot
+ggsave('out/exploration/unifrac_boxplot.png', unifracW_boxplot, dpi= 600)
+
+# PCOA
 pcoa <- cmdscale(dist_w, k = 2, eig = TRUE, add = TRUE)
 positions_w <- as.data.frame(pcoa$points)
 colnames(positions_w) <- c('pcoa1', 'pcoa2')
@@ -514,65 +573,6 @@ positions_w %>%
        color = 'Individual', shape = 'Fraction') 
 ggsave('out/exploration/weighted_pcoa_all.png', height = 20, width = 30, dpi=600)
 
-
-# Between and within differences
-unifrac_w <- as.data.frame(as.matrix(dist_w)) %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
-  mutate(Group_clean = str_remove(Group, "-.*$"), 
-         name_clean = str_remove(name, "-.*$")) %>%
-  left_join(seq_metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
-  left_join(seq_metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
-  left_join(fraction_all, by = 'Group') %>%
-  left_join(fraction_all, by = c('name' = 'Group')) %>%
-  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
-         same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
-  filter(same_fraction == 'Yes')
-
-unifrac_w$fraction.y = factor(unifrac_w$fraction.y, levels = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant Bacillota',  'Ethanol resistant Bacillota', 'Other ethanol resistant OTUs'))
-
-uni_within <- filter(unifrac_w, same_person ==  'Within individual') %>%
-  select(Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  column_to_rownames('Group')
-
-anosim_within <- anosim(uni_within, grouping = fraction_all$fraction, permutations = 999)
-
-uni_between <- filter(unifrac_w, same_person ==  'Between individuals') %>%
-  select(Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  column_to_rownames('Group')
-
-anosim_between <- anosim(uni_between, grouping = fraction_all$fraction, permutations = 999)
-
-annotate <-  data.frame(same_person = c('Within individual', 'Between individuals'),
-                        fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
-                        significance = c(anosim_within$signif, anosim_between$signif), 
-                        statistic = c(anosim_within$statistic, anosim_between$statistic))
-
-
-unifracW_boxplot <- unifrac_w %>%
-  filter(same_fraction == 'Yes' & fraction.y != 'Non-ethanol resistant Bacillota') %>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
-  labs(y='weighted UniFrac distances', x='', fill='') +
-  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
-  facet_grid(~same_person) 
-ggsave('out/exploration/weightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
-
-unifracW_boxplot_all <- unifrac_w %>%
-  filter(same_fraction == 'Yes') %>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
-  labs(y='weighted UniFrac distances', x='', fill='') +
-  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
-  facet_grid(~same_person) 
-
 # Progression in time 
 unifrac_w_time <- unifrac_w %>% 
   filter(same_person == 'Within individual') %>%
@@ -590,7 +590,69 @@ ggsave('out/exploration/weightedUnifrac_time.png', width = 24, height = 18, unit
 
 ##
 # Unweighted UniFrac
-dist_u <- UniFrac(ps_all, weighted = FALSE)
+dist_all <- data.frame()
+unifrac_u <- calculate_unifrac(tab_all, min, FALSE)
+
+dist_u <- dist_all %>%
+  mutate(sample_pairs = paste(Group, name)) %>%
+  group_by(sample_pairs) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), 
+            median_value = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE), .groups = 'drop') %>%
+  ungroup()
+
+unifrac_u <- dist_u %>%
+  separate(sample_pairs, into = c("Group", "name"), sep = " ") %>%
+  left_join(seq_fraction, by = 'Group') %>%
+  left_join(seq_fraction, by = join_by('name' == 'Group')) %>%
+  mutate(Group_clean = str_remove(Group, "-.*$"),
+         name_clean = str_remove(name, '-.*$')) %>%
+  left_join(seq_metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
+  left_join(seq_metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'),
+         same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
+  filter(same_fraction == 'Yes')
+
+unifrac_u$fraction.y = factor(unifrac_u$fraction.y, levels = levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
+                                                                        'Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
+
+# ANOSIM 
+# within
+within_bacillota <- calculate_anosim(unifrac_u, condition = 'Within individual', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
+
+within_other <- calculate_anosim(unifrac_u, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
+
+# between 
+between_bacillota <- calculate_anosim(unifrac_u, condition = 'Between individuals', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
+
+between_other <- calculate_anosim(unifrac_u, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
+
+# Combine all results
+anosim_unifrac_u <- data.frame(
+  same_person = c('Within individual', 'Within individual', 'Between individuals', 'Between individuals'),
+  fraction.y = c('Ethanol resistant Bacillota', 'Ethanol resistant OTUs', 'Ethanol resistant Bacillota', 'Ethanol resistant OTUs'), 
+  R = c(within_bacillota$statistic, 
+        within_other$statistic, 
+        between_bacillota$statistic, 
+        between_other$statistic),
+  p = c(within_bacillota$signif, 
+        within_other$signif, 
+        between_bacillota$signif, 
+        between_other$signif))
+
+unifracU_boxplot <- unifrac_u %>%
+  ggplot(aes(x=fraction.y, y=mean_value, fill=fraction.y)) +
+  geom_boxplot() +
+  geom_text(data = anosim_unifrac_w, aes(y = 0.96, x = fraction.y, label = paste('p = ', round(p, 3))), size = 3, hjust = -0.65) +
+  geom_text(data = anosim_unifrac_w, aes(y = 0.99, x = fraction.y, label = paste('R = ', scientific(R, 2))), size = 3, hjust = -0.4) +
+  labs(y='unweighted UniFrac distances', x='', fill='') +
+  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  guides(fill = guide_legend(ncol = 2)) +
+  facet_grid(~same_person) 
+unifracU_boxplot
+ggsave('out/exploration/unifrac_unweighted_boxplot.png', unifracW_boxplot, dpi= 600)
+
+# PCOA
 pcoa <- cmdscale(dist_u, k = 2, eig = TRUE, add = TRUE)
 positions_u <- as.data.frame(pcoa$points)
 colnames(positions_u) <- c('pcoa1', 'pcoa2')
@@ -608,67 +670,6 @@ positions_u %>%
        y=paste0(round(percent_explained[2], digits = 1), '%'), 
        color = 'Individual', shape = 'Fraction') 
 ggsave('out/exploration/unweighted_pcoa_all.png', height = 20, width = 30, dpi=600)
-
-
-# Between and within differences
-unifrac_u <- as.data.frame(as.matrix(dist_u)) %>%
-  rownames_to_column('Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
-  mutate(Group_clean = str_remove(Group, "-.*$"), 
-         name_clean = str_remove(name, "-.*$")) %>%
-  left_join(seq_metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
-  left_join(seq_metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
-  left_join(fraction_all, by = 'Group') %>%
-  left_join(fraction_all, by = c('name' = 'Group')) %>%
-  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
-         same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
-  filter(same_fraction == 'Yes')
-
-unifrac_u$fraction.y = factor(unifrac_u$fraction.y, levels = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant Bacillota',  'Ethanol resistant Bacillota', 'Other ethanol resistant OTUs'))
-
-uni_within <- filter(unifrac_u, same_person ==  'Within individual') %>%
-  select(Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  column_to_rownames('Group')
-
-anosim_within_u <- anosim(uni_within, grouping = fraction_all$fraction, permutations = 999)
-
-uni_between <- filter(unifrac_u, same_person ==  'Between individuals') %>%
-  select(Group, name, value) %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  column_to_rownames('Group')
-
-anosim_between_u <- anosim(uni_between, grouping = fraction_all$fraction, permutations = 999)
-
-anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
-                      fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
-                      significance = c(anosim_within_u$signif, anosim_between$signif), 
-                      statistic = c(anosim_within_u$statistic, anosim_between$statistic))
-
-
-unifracU_boxplot <- unifrac_u %>%
-  filter(same_fraction == 'Yes' & fraction.y != 'Non-ethanol resistant Bacillota') %>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
-  labs(y='unweighted UniFrac distances', x='', fill='') +
-  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
-  facet_grid(~same_person) 
-ggsave('out/exploration/unweightedUnifrac_boxplot.png', width = 24, height = 18, units = 'cm', dpi = 600)
-
-unifracU_boxplot_all <- unifrac_u %>%
-  filter(same_fraction == 'Yes') %>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
-  labs(y='unweighted UniFrac distances', x='', fill='') +
-  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
-  facet_grid(~same_person) 
-
-
 # Progression in time 
 unifrac_u_time <- unifrac_u %>% 
   filter(same_person == 'Within individual') %>%
@@ -684,19 +685,18 @@ u_time <- ggplot(unifrac_u_time, aes(x=diff, y=median, color=fraction.y)) +
   theme(legend.position = 'bottom')
 ggsave('out/exploration/unweightedUnifrac_time.png', width = 24, height = 18, units = 'cm', dpi = 600)
 
-# Supplement figre, to figure 1 
-ggarrange(bray_boxplot_all, jaccard_boxplot_all, unifracW_boxplot_all, unifracU_boxplot_all, 
+# Supplement Figure 1
+ggarrange(bray_boxplot, jaccard_boxplot, unifracW_boxplot, unifracU_boxplot, 
           common.legend = TRUE, legend = 'bottom')
 ggsave('out/exploration/boxplot_all.png', dpi=600)
 
-# Supplement to figure 1 
-ggarrange(bray_boxplot_all, jaccard_boxplot_all, unifracW_boxplot_all, unifracU_boxplot_all, 
-          nrow = 2, ncol = 2, legend = 'bottom', common.legend = TRUE)
-ggsave('out/exploration/beta_distance_boxplots.png', dpi=600)
-
+# Supplement Figure 2 
 ggarrange(b_time, j_time, w_time, u_time, nrow = 2, ncol = 2, 
           legend = 'bottom', common.legend = TRUE)
 ggsave('out/exploration/beta_distance_time.png', dpi=600)
+
+
+
 
 # ##
 # # Generalized UniFrac
