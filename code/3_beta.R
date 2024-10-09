@@ -10,12 +10,10 @@ library(ape)
 library(ggpubr)
 library(scales)
 library(phyloseq)
-library(GUniFrac)
 
 set.seed(96)
 theme_set(theme_bw())
 
-otutabEM = readRDS('data/r_data/otutabEM.RDS')
 metadata = readRDS('data/r_data/metadata.RDS')
 taxtab = readRDS('data/r_data/taxtab.RDS')
 
@@ -23,227 +21,139 @@ seqtab = readRDS('data/r_data/seqtab.RDS')
 seq_metadata = readRDS('data/r_data/seq_metadata.RDS')
 seq_taxtab = readRDS('data/r_data/seq_taxtab.RDS')
 tree = readRDS('data/r_data/tree.RDS')
-ddPCR = readRDS('data/r_data/ddPCR.RDS')
 
-##
+
+# 
+otu_all <- readRDS('data/r_data/otutab_long_fractions.RDS')
 # Prepare the data 
-# OTUs
-otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
-  pivot_longer(cols = starts_with('Otu')) %>%
-  left_join(metadata %>% select(original_sample, Group, person), by = 'Group') %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value / sum(value)) %>%
-  ungroup() %>%
-  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-  mutate(norm_abund = rel_abund * copies) %>%
-  select(Group, name, value, original_sample, person, norm_abund, rel_abund) %>%
-  left_join(taxtab, by = 'name')
-
-otu_etoh <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                      otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
-                      by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  mutate(y = ifelse(value.y > 0 & value.x > 0, 'Yes', 'No')) %>%
-  filter(y == 'Yes') %>%
-  #filter(norm_abund.x > 0 & norm_abund.y > 0) %>%
-  #mutate(fraction = value.y/(value.y + value.x)) %>%
-  #filter(fraction > 0.5) %>%
-  pull(unique(name))
-
-non_etoh <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
-  mutate(Group = paste0(Group, "-NE"), fraction = 'Non-ethanol resistant OTUs')
-etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
-  filter(Phylum != 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-EO"), fraction = 'Other ethanol resistant OTUs')
-etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% otu_etoh) %>%
-  filter(Phylum == 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
-non_etoh_firm <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% otu_etoh)) %>%
-  filter(Phylum == 'Firmicutes') %>%
-  mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
-
-otu_all <- rbind(non_etoh, etoh_other, etoh_firm, non_etoh_firm)
 otu_fraction <- distinct(otu_all, Group, .keep_all = TRUE) %>%
   select(Group,fraction)
 
-otutab <- select(otu_all, Group, name, value) %>%
+otutab <- otu_all %>%
+  select(Group, name, value) %>%
   pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
   column_to_rownames('Group')
 
-# Bray-Curtis
-dist_bray <- vegdist(otutab, method = 'bray')
+min <- otu_all_long %>%
+  group_by(fraction) %>%
+  summarise(sum= n_distinct(name)) %>%
+  ungroup() %>%
+  summarise(min = min(sum) - 5) %>%
+  pull(min)
 
-bray <- as.matrix(dist_bray) %>% 
-  as_tibble(rownames = 'Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
+# # Distribution of OTUs 
+# otu_all_long %>%
+#   ggplot(aes(x = rel_abund, fill = fraction)) +
+#   geom_histogram() +
+#   scale_x_log10()
+
+# Functions 
+calculate_dist <- function(otutab, min_samples, method) {
+  dist_all <- data.frame()
+  
+  for (i in 1:999) {
+    # Resample OTUs within each fraction
+    otutab_t <- t(otutab)
+    resampled_t <- otutab_t[sample(1:ncol(otutab_t), size = min, replace = TRUE), ]
+    resampled_otutab <- t(resampled_t)
+    
+    # Calculate distances (Bray-Curtis)
+    dist <- vegdist(resampled_otutab, method = method)
+    
+    # Tidy the Bray-Curtis matrix
+    dist_long <- as.matrix(dist) %>%
+      as_tibble(rownames = 'Group') %>%
+      pivot_longer(-Group) %>%
+      filter(Group != name)
+    
+    dist_all <- rbind(dist_all, dist_long)
+  }
+  
+  dist_all
+}
+
+# ANOSIM 
+calculate_anosim <- function(data, condition, fractions) {
+  filtered_data <- filter(bray, same_person == condition & fraction.x %in% fractions) %>%
+    distinct(Group, .keep_all = TRUE)
+  
+  dist_matrix <- filter(bray, same_person == condition & fraction.x %in% fractions) %>%
+    select(Group, name, mean_value) %>%
+    pivot_wider(names_from = 'name', values_from = 'mean_value', values_fill = 1) %>%
+    column_to_rownames('Group') %>%
+    as.dist()
+  
+  anosim(dist_matrix, filtered_data$fraction.y, permutations = 999)
+}
+
+# Bray-Curtis
+# Perform resampling and calculate Bray-Curtis distances
+dist_bray <- calculate_dist(otutab, min, 'bray')
+
+# Calculate mean and median distance values
+dist_bray <- dist_bray %>%
+  mutate(sample_pairs = paste(Group, name)) %>%
+  group_by(sample_pairs) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), 
+            median_value = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE), .groups = 'drop') %>%
+  ungroup()
+
+# Tidy the Bray data and join with metadata
+bray <- dist_bray %>%
+  separate(sample_pairs, into = c("Group", "name"), sep = " ") %>%
   left_join(otu_fraction, by = 'Group') %>%
   left_join(otu_fraction, by = join_by('name' == 'Group')) %>%
-  mutate(Group_clean = str_remove(Group, "-.*$"), 
+  mutate(Group_clean = str_remove(Group, "-.*$"),
          name_clean = str_remove(name, '-.*$')) %>%
   left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
   left_join(metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
-  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'),
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-bray$fraction.y <- factor(bray$fraction.y , levels = c("Non-ethanol resistant OTUs", 'Non-ethanol resistant Bacillota',  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
+# Factorize fraction.y
+bray$fraction.y <- factor(bray$fraction.y, 
+                          levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
+                                     'Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
-# # Statistics 
-# within <- filter(bray, same_person == "Within individual") %>%
-#   distinct(Group, .keep_all = TRUE)
-# 
-# within_dist <- filter(bray, same_person == "Within individual") %>%
-#   select(Group, name, value) %>%
-#   pivot_wider(values_fill = 1) %>%
-#   column_to_rownames('Group') %>%
-#   as.dist()
-# anosim_within <- anosim(within_dist, within$fraction.y, permutations = 999)
-# 
-# between <- filter(bray, same_person == "Between individuals") %>%
-#   distinct(Group, .keep_all = TRUE) 
-# between_dist <- filter(bray, same_person == "Between individuals") %>%
-#   select(Group, name, value) %>%
-#   pivot_wider(values_fill = 1) %>%
-#   column_to_rownames('Group') %>%
-#   as.dist()
-# 
-# anosim_between <- anosim(between_dist, between$fraction.y, permutations = 999)
-# 
-# anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
-#                       fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
-#                       significance = c(anosim_within$signif, anosim_between$signif), 
-#                       statistic = c(anosim_within$statistic, anosim_between$statistic))
+# ANOSIM 
+# within
+within_bacillota <- calculate_anosim(bray, condition = 'Within individual', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
+within_other <- calculate_anosim(bray, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
 
-# Bootstraping ANOSIM 
-bootstrap_anosim_bray <- function(otu_all, otu_fraction, metadata, n_iterations = 1000) {
-  set.seed(96)  
-  # Dataframe to store results from each iteration
-  results <- data.frame(iteration = integer(),
-                        within_statistic = numeric(),
-                        within_significance = numeric(),
-                        between_statistic = numeric(),
-                        between_significance = numeric())
-  
-  # Get list of unique fractions
-  fractions <- unique(otu_fraction$fraction)
-  
-  # Perform bootstrapping
-  for (i in 1:n_iterations) {
-    resampled_otutab <- matrix()
-    
-    # Resample OTUs within each fraction using dplyr
-    resampled_otus <- otu_all %>%
-      group_by(fraction, Group) %>%
-      summarize(name = list(sample(unique(name), size = 326, replace = FALSE)), .groups = 'drop') %>%
-      unnest(name) %>%
-      left_join(select(otu_all, Group, name, fraction, value), by = c('Group', 'fraction', 'name'))
-    
-    # Create resampled OTU table by selecting the resampled OTU names
-    resampled_otutab <- select(resampled_otus,  Group, name, value) %>%
-      pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-      column_to_rownames('Group')
-    
-    # Recalculate Bray-Curtis distances for resampled OTUs
-    dist_bray <- vegdist(resampled_otutab, method = 'bray')
-    
-    # Tidy the Bray-Curtis matrix
-    bray <- as.matrix(dist_bray) %>% 
-      as_tibble(rownames = 'Group') %>%
-      pivot_longer(-Group) %>%
-      filter(Group != name) %>%
-      left_join(otu_fraction, by = 'Group') %>%
-      left_join(otu_fraction, by = join_by('name' == 'Group')) %>%
-      mutate(Group_clean = str_remove(Group, "-.*$"), 
-             name_clean = str_remove(name, '-.*$')) %>%
-      left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
-      left_join(metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
-      mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
-             same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
-      filter(same_fraction == 'Yes')
-    
-    # Within-individual and between-individual distances
-    within <- filter(bray, same_person == "Within individual") %>%
-      distinct(Group, .keep_all = TRUE)
-    
-    within_dist <- filter(bray, same_person == "Within individual") %>%
-      select(Group, name, value) %>%
-      pivot_wider(values_fill = 1) %>%
-      column_to_rownames('Group') %>%
-      as.dist()
-    
-    between <- filter(bray, same_person == "Between individuals") %>%
-      distinct(Group, .keep_all = TRUE) 
-    
-    between_dist <- filter(bray, same_person == "Between individuals") %>%
-      select(Group, name, value) %>%
-      pivot_wider(values_fill = 1) %>%
-      column_to_rownames('Group') %>%
-      as.dist()
-    
-    # Run ANOSIM for within and between individuals
-    anosim_within <- anosim(within_dist, within$fraction.y, permutations = 999)
-    anosim_between <- anosim(between_dist, between$fraction.y, permutations = 999)
-    
-    # Store results from this iteration
-    results <- rbind(results, data.frame(
-      iteration = i,
-      within_statistic = anosim_within$statistic,
-      within_significance = anosim_within$signif,
-      between_statistic = anosim_between$statistic,
-      between_significance = anosim_between$signif
-    ))
-  }
-  
-  return(results)
-}
+# between 
+between_bacillota <- calculate_anosim(bray, condition = 'Between individuals', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
+between_other <- calculate_anosim(bray, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
 
-# Run the OTU resampling function with 1000 iterations
-bootstrap_results <- bootstrap_anosim_by_fraction(otu_all, otu_fraction, metadata, n_iterations = 999)
-saveRDS(bootstrap_results, 'out/bootstrap_results_bray.RDS')
-
-# Summarize results
-bootstrap_summary <- bootstrap_results %>%
-  summarise(within_mean_statistic = mean(within_statistic),
-            within_sd_statistic = sd(within_statistic),
-            between_mean_statistic = mean(between_statistic),
-            between_sd_statistic = sd(between_statistic),
-            within_mean_significance = mean(within_significance),
-            within_sd_significance = sd(within_significance),
-            between_mean_significance = mean(between_significance),
-            between_sd_significance = sd(between_significance))
-
-anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
-                      fraction.y = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant OTUs'),
-                      significance = c(bootstrap_summary$within_mean_significance , bootstrap_summary$between_mean_significance), 
-                      statistic = c(bootstrap_summary$within_mean_statistic , bootstrap_summary$between_mean_statistic),
-                      sd_significance = c(bootstrap_summary$within_sd_significance , bootstrap_summary$between_sd_significance), 
-                      sd_statistic = c(bootstrap_summary$within_sd_statistic, bootstrap_summary$between_sd_statistic)) %>%
-  mutate(significance = as.numeric(significance))
+# Combine all results
+anosim_bray <- data.frame(
+  same_person = c('Within individual', 'Within individual', 'Between individuals', 'Between individuals'),
+  fraction.y = c('Ethanol resistant Bacillota', 'Ethanol resistant OTUs', 'Ethanol resistant Bacillota', 'Ethanol resistant OTUs'), 
+  R = c(within_bacillota$statistic, 
+        within_other$statistic, 
+        between_bacillota$statistic, 
+        between_other$statistic),
+  p = c(within_bacillota$signif, 
+        within_other$signif, 
+        between_bacillota$signif, 
+        between_other$signif))
 
 # Plot 
 bray_boxplot <- bray %>%
-  filter(same_fraction == 'Yes')%>%
-  filter(fraction.y != 'Non-ethanol resistant Bacillota') %>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  ggplot(aes(x=fraction.y, y=mean_value, fill=fraction.y)) +
   geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  geom_text(data = anosim_bray, aes(y = 0.96, x = fraction.y, label = paste('p = ', round(p, 3))), size = 3, hjust = -0.5) +
+  geom_text(data = anosim_bray, aes(y = 0.99, x = fraction.y, label = paste('R = ', scientific(R, 3))), size = 3, hjust = -0.28) +
   labs(y='Bray-Curtis distances', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  guides(fill = guide_legend(ncol = 2)) +
   facet_grid(~same_person) 
-ggsave('out/submission/bray_boxplot.png', bray_boxplot, dpi= 600)
 
-bray_boxplot_all <- bray %>%
-  filter(same_fraction == 'Yes')%>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
-  labs(y='Bray-Curtis distances', x='', fill='') +
-  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
-  facet_grid(~same_person) 
+bray_boxplot
+ggsave('out/exploration/bray_boxplot.png', bray_boxplot, dpi= 600)
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
 # for the differences between microbiota and sporobiota! 
@@ -352,181 +262,74 @@ time_etoh_firm <- filter(time_bray, fraction.y == 'Ethanol resistant Bacillota' 
 cor.test(as.numeric(time_etoh_firm$diff), time_etoh_firm$median, method='pearson')
 # # Positive correlation 0.024, not significant
 
-##
 # Jaccard
-dist_jaccard <- vegdist(otutab, method = 'jaccard')
+# Perform resampling and calculate Jaccard distances
+dist_jaccard <- calculate_dist(otutab, min, 'jaccard')
 
-jaccard <- as.matrix(dist_jaccard) %>% 
-  as_tibble(rownames = 'Group') %>%
-  pivot_longer(-Group) %>%
-  filter(Group != name) %>%
+# Calculate mean and median distance values
+dist_jaccard <- dist_jaccard %>%
+  mutate(sample_pairs = paste(Group, name)) %>%
+  group_by(sample_pairs) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), 
+            median_value = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE), .groups = 'drop') %>%
+  ungroup()
+
+# Tidy the jaccard data and join with metadata
+jaccard <- dist_jaccard %>%
+  separate(sample_pairs, into = c("Group", "name"), sep = " ") %>%
   left_join(otu_fraction, by = 'Group') %>%
   left_join(otu_fraction, by = join_by('name' == 'Group')) %>%
-  mutate(Group_clean = str_remove(Group, "-.*$"), 
+  mutate(Group_clean = str_remove(Group, "-.*$"),
          name_clean = str_remove(name, '-.*$')) %>%
   left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
   left_join(metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
-  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
+  mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'),
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-jaccard$fraction.y <- factor(jaccard$fraction.y , levels = c("Non-ethanol resistant OTUs", 'Non-ethanol resistant Bacillota',  "Ethanol resistant Bacillota", "Other ethanol resistant OTUs"))
+# Factorize fraction.y
+jaccard$fraction.y <- factor(jaccard$fraction.y, 
+                             levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
+                                        'Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
-# # Statistics 
-# within <- filter(jaccard, same_person == "Within individual") %>%
-#   distinct(Group, .keep_all = TRUE)
-# 
-# within_dist <- filter(jaccard, same_person == "Within individual") %>%
-#   select(Group, name, value) %>%
-#   pivot_wider(values_fill = 1) %>%
-#   column_to_rownames('Group') %>%
-#   as.dist()
-# anosim_within <- anosim(within_dist, within$fraction.y, permutations = 999)
-# 
-# between <- filter(jaccard, same_person == "Between individuals") %>%
-#   distinct(Group, .keep_all = TRUE) 
-# between_dist <- filter(jaccard, same_person == "Between individuals") %>%
-#   select(Group, name, value) %>%
-#   pivot_wider(values_fill = 1) %>%
-#   column_to_rownames('Group') %>%
-#   as.dist()
-# 
-# anosim_between <- anosim(between_dist, between$fraction.y, permutations = 999)
-# 
-# anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
-#                       fraction.y = c('Other ethanol resistant OTUs', 'Other ethanol resistant OTUs'),
-#                       significance = c(anosim_within$signif, anosim_between$signif), 
-#                       statistic = c(anosim_within$statistic, anosim_between$statistic))
+# ANOSIM 
+# within
+within_bacillota <- calculate_anosim(jaccard, condition = 'Within individual', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
-# Bootstraping ANOSIM 
-bootstrap_anosim_jaccard <- function(otu_all, otu_fraction, metadata, n_iterations = 999) {
-  set.seed(96)  
-  # Dataframe to store results from each iteration
-  results <- data.frame(iteration = integer(),
-                        within_statistic = numeric(),
-                        within_significance = numeric(),
-                        between_statistic = numeric(),
-                        between_significance = numeric())
-  
-  # Get list of unique fractions
-  fractions <- unique(otu_fraction$fraction)
-  
-  # Perform bootstrapping
-  for (i in 1:n_iterations) {
-    resampled_otutab <- matrix()
-    
-    # Resample OTUs within each fraction using dplyr
-    resampled_otus <- otu_all %>%
-      group_by(fraction, Group) %>%
-      summarize(name = list(sample(unique(name), size = 326, replace = FALSE)), .groups = 'drop') %>%
-      unnest(name) %>%
-      left_join(select(otu_all, Group, name, fraction, value), by = c('Group', 'fraction', 'name'))
-    
-    # Create resampled OTU table by selecting the resampled OTU names
-    resampled_otutab <- select(resampled_otus,  Group, name, value) %>%
-      pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-      column_to_rownames('Group')
-    
-    # Recalculate jaccard-Curtis distances for resampled OTUs
-    dist_jaccard <- vegdist(resampled_otutab, method = 'jaccard')
-    
-    # Tidy the jaccard matrix
-    jaccard <- as.matrix(dist_jaccard) %>% 
-      as_tibble(rownames = 'Group') %>%
-      pivot_longer(-Group) %>%
-      filter(Group != name) %>%
-      left_join(otu_fraction, by = 'Group') %>%
-      left_join(otu_fraction, by = join_by('name' == 'Group')) %>%
-      mutate(Group_clean = str_remove(Group, "-.*$"), 
-             name_clean = str_remove(name, '-.*$')) %>%
-      left_join(metadata %>% select(Group, person, date), by = join_by('Group_clean' == 'Group')) %>%
-      left_join(metadata %>% select(Group, person, date), by = join_by('name_clean' == 'Group')) %>%
-      mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
-             same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
-      filter(same_fraction == 'Yes')
-    
-    # Within-individual and between-individual distances
-    within <- filter(jaccard, same_person == "Within individual") %>%
-      distinct(Group, .keep_all = TRUE)
-    
-    within_dist <- filter(jaccard, same_person == "Within individual") %>%
-      select(Group, name, value) %>%
-      pivot_wider(values_fill = 1) %>%
-      column_to_rownames('Group') %>%
-      as.dist()
-    
-    between <- filter(jaccard, same_person == "Between individuals") %>%
-      distinct(Group, .keep_all = TRUE) 
-    
-    between_dist <- filter(jaccard, same_person == "Between individuals") %>%
-      select(Group, name, value) %>%
-      pivot_wider(values_fill = 1) %>%
-      column_to_rownames('Group') %>%
-      as.dist()
-    
-    # Run ANOSIM for within and between individuals
-    anosim_within <- anosim(within_dist, within$fraction.y, permutations = 999)
-    anosim_between <- anosim(between_dist, between$fraction.y, permutations = 999)
-    
-    # Store results from this iteration
-    results <- rbind(results, data.frame(
-      iteration = i,
-      within_statistic = anosim_within$statistic,
-      within_significance = anosim_within$signif,
-      between_statistic = anosim_between$statistic,
-      between_significance = anosim_between$signif
-    ))
-  }
-  
-  return(results)
-}
+within_other <- calculate_anosim(jaccard, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
 
+# between 
+between_bacillota <- calculate_anosim(jaccard, condition = 'Between individuals', fractions = c('Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
-# Run the OTU resampling function with 1000 iterations
-bootstrap_results <- bootstrap_anosim_by_fraction(otu_all, otu_fraction, metadata, n_iterations = 999)
-saveRDS(bootstrap_results, 'out/bootstrap_results_jaccard.RDS')
+between_other <- calculate_anosim(jaccard, condition = 'Within individual', fractions = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs'))
 
-# Summarize results
-bootstrap_summary <- bootstrap_results %>%
-  summarise(within_mean_statistic = mean(within_statistic),
-            within_sd_statistic = sd(within_statistic),
-            between_mean_statistic = mean(between_statistic),
-            between_sd_statistic = sd(between_statistic),
-            within_mean_significance = mean(within_significance),
-            within_sd_significance = sd(within_significance),
-            between_mean_significance = mean(between_significance),
-            between_sd_significance = sd(between_significance))
-
-anotate <- data.frame(same_person = c('Within individual', 'Between individuals'),
-                      fraction.y = c('Non-ethanol resistant OTUs', 'Non-ethanol resistant OTUs'),
-                      significance = c(bootstrap_summary$within_mean_significance , bootstrap_summary$between_mean_significance), 
-                      statistic = c(bootstrap_summary$within_mean_statistic , bootstrap_summary$between_mean_statistic),
-                      sd_significance = c(bootstrap_summary$within_sd_significance , bootstrap_summary$between_sd_significance), 
-                      sd_statistic = c(bootstrap_summary$within_sd_statistic, bootstrap_summary$between_sd_statistic)) %>%
-  mutate(significance = as.numeric(significance))
-
+# Combine all results
+anosim_jaccard <- data.frame(
+  same_person = c('Within individual', 'Within individual', 'Between individuals', 'Between individuals'),
+  fraction.y = c('Ethanol resistant Bacillota', 'Ethanol resistant OTUs', 'Ethanol resistant Bacillota', 'Ethanol resistant OTUs'), 
+  R = c(within_bacillota$statistic, 
+        within_other$statistic, 
+        between_bacillota$statistic, 
+        between_other$statistic),
+  p = c(within_bacillota$signif, 
+        within_other$signif, 
+        between_bacillota$signif, 
+        between_other$signif))
 
 # Plot 
 jaccard_boxplot <- jaccard %>%
-  filter(same_fraction == 'Yes' & fraction.y != 'Non-ethanol resistant Bacillota')%>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
+  ggplot(aes(x=fraction.y, y=mean_value, fill=fraction.y)) +
   geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
+  geom_text(data = anosim_jaccard, aes(y = 0.96, x = fraction.y, label = paste('p = ', round(p, 3))), size = 3, hjust = -0.28) +
+  geom_text(data = anosim_jaccard, aes(y = 0.99, x = fraction.y, label = paste('R = ', scientific(R, 2))), size = 3, hjust = -0.5) +
   labs(y='Jaccard distances', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom') +
+  guides(fill = guide_legend(ncol = 2)) +
   facet_grid(~same_person) 
-ggsave('out/exploration/jaccard_boxplot.png', jaccard_boxplot, dpi= 600)
 
-jaccard_boxplot_all <- jaccard %>%
-  filter(same_fraction == 'Yes' ) %>%
-  ggplot(aes(x=fraction.y, y=value, fill=fraction.y)) +
-  geom_boxplot() +
-  geom_text(data = anotate, aes(y = 0.96, label = paste('Significance: ', significance)), size = 3 ,hjust = 'right') +
-  geom_text(data = anotate, aes(y = 1, label = paste('ANOSIM R statistic: ', round(statistic, 3))), size = 3, hjust = 'right') +
-  labs(y='Jaccard distances', x='', fill='') +
-  theme(axis.text.x = element_blank(), legend.position = 'bottom') +
-  facet_grid(~same_person) 
+jaccard_boxplot
+ggsave('out/exploration/jaccard_boxplot.png', jaccard_boxplot, dpi= 600)
 
 
 # If I normalize distances of each individual with min-max normalization, so that the dispersion of each individuals cluster does not account 
