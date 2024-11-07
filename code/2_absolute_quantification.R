@@ -1,7 +1,9 @@
 # Library 
-library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
-library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
-library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(vegan)
+library(tibble)
 library(readxl)
 # Code for impelemnting absolute quantification of thw 16S rRNA gene measured by ddPCR 
 # DNA for microbiota samples was diluted to 5 ng/ul * 10E-6
@@ -91,17 +93,23 @@ pf = read.quantasoft('data/absolute_quantification/PowerFecal/ddpcr_cdiff_202408
 pf$sample_description = factor(pf$sample_description, levels = c('negative control (H2O)', 'negative control (E. coli)','fecal sample', 'fecal sample + 10e-4 spores', 'fecal sample + 10e-3 spores', 
                                                         'fecal sample + 10e-1 spores', 'fecal sample with undiluted spores','positive control (C.diff)'))
 
-ggplot(pf_cor, aes(x = sporeCFU, y = abs_conc, color = sample_description )) +
+# Present only the ones important for correlation! 
+pf_cor <- filter(pf, sample_description %in% c('fecal sample + 10e-4 spores', 'fecal sample + 10e-3 spores', 
+                                           'fecal sample + 10e-1 spores', 'fecal sample with undiluted spores'))
+cor_pf <- cor.test(pf_cor$Concentration, pf_cor$sporeCFU, method = 'pearson')
+
+pf_cor %>%
+  ggplot(aes(x = sporeCFU, y = abs_conc, color = sample_description )) +
   geom_point(size = 3) +
+  geom_abline() +
+  annotate('text', x= 1e7, y = 1e9, 
+           label = paste("Pearson's correlation:", round(cor_pf$estimate, digits =2), '\n', 
+                         'p-value =', round(cor_pf$p.value, digits = 3))) +
   scale_x_continuous(trans = log_trans(), breaks = c(0, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11)) +
   scale_y_continuous(trans = log_trans(), breaks = c(0, 1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10)) +
-  geom_abline() +
   labs(x = expression(italic("C. difficile") * " spores CFU/ml"), 
        y = expression("Copies of " * italic("C. difficile") * " 16S rRNA/ml"), color = 'Sample')
 ggsave('out/exploration/PowerFecal_spores.png', dpi = 600)
 
 
-pf_cor <- pf %>%
-  filter(sample_description != 'negative control (H2O)' & sample_description != 'negative control (E. coli)' & sample_description !='positive control (C.diff)')
-  
-cor.test(pf_cor$Concentration, pf_cor$sporeCFU, method = 'pearson')
+
