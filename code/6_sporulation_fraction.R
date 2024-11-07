@@ -1,7 +1,4 @@
-
 # Libraries 
-library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
-library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
 library(dplyr)
 library(tidyr)
 library(tibble)
@@ -14,13 +11,19 @@ theme_set(theme_bw())
 # Import data
 # Import data 
 otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
-otutab_fractions <- readRDS('data/r_data/otutab_all_fractions.RDS')
 otutabEM <- readRDS('data/r_data/otutabEM.RDS')
 metadata <- readRDS('data/r_data/metadata.RDS')
 taxtab <- readRDS('data/r_data/taxtab.RDS')
-sporeformers_list <- readRDS('data/r_data/etoh_otus_Bacillota.RDS') %>% pull(unique(name))
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
+# This analysis is based on ethanol resistant Bacillota OTUs - sporeformers! 
+otu_long <- readRDS('data/r_data/otu_long.RDS')
+# OTU that is ethanol resistant once is always ethanol resistant 
+etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
+etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
+  mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
+
+sporeformers_list <- unique(etoh_bacillota$name)
 
 # Colors
 colE = c('#6690b5')
@@ -253,7 +256,7 @@ otutabR = otutabMp %>%
 
 # By person 
 filter(otutabR, person != 'NA') %>% 
-  ggplot(aes(x = log10(rescaled), y = log10(value), color =person)) +
+  ggplot(aes(x = log10(rescaled), y = log10(value))) +
   geom_point()+
   facet_wrap(~person, nrow = 3) +
   labs(x = 'log10(Rescaled relative abundance OTU in microbiota samples)', 
@@ -264,7 +267,7 @@ ggsave('out/exploration/relabund_rescaledbyetOH.png', dpi = 600)
 # For OTU1
 otutabR %>%
   filter(name == 'Otu000001' & person != 'NA') %>%
-  ggplot(aes(x = rescaled, y = value, color = person)) +
+  ggplot(aes(x = rescaled, y = value)) +
   geom_point(size=3) +
   labs(x = 'Rescaled relative abundance', 
        y = 'Relative abundance ') +
@@ -300,7 +303,6 @@ ggsave('out/exploration/relabund_rescaledbyetOH_top5EtOh.png', dpi = 600)
 
 # Rescaling option number 2, all OTUs from EtOh = does not make sense as sum of all OTUs will always be 1 or the normalization number
 # NO rescaling 
-
 otutabR3 = otutab_absrel %>%
   left_join(select(metadata, Group, original_sample, biota), by ='Group') %>%
   filter(biota == 'Microbiota') %>%
@@ -421,6 +423,7 @@ ggsave('out/exploration/meanrel_meanrel.png', dpi = 600)
 # by person
 # Average sporobiota vs average microbiota rescaled rel abundance correlation?
 otutabR %>%
+  filter(!is.na(person)) %>%
   group_by(name, person) %>%
   reframe(mean_xi = mean(rescaled, na.rm = TRUE), 
           mean_yi = mean(value)) %>%
@@ -482,13 +485,15 @@ ggsave('out/exploration/normAbund_normAbund.png', dpi = 600)
 
 # OTUs 1 person 
 otutabA %>%
-  ggplot(aes(x = norm_abund.x, y = norm_abund.y, color = name )) +
+  ggplot(aes(x = norm_abund.x, y = norm_abund.y)) +
   geom_point(show.legend = FALSE) +
   scale_x_log10() +
   scale_y_log10() +
   facet_wrap(~person, nrow=3) +
   labs( x = 'Xi', y= 'Yi')
 ggsave('out/exploration/normAbund_normAbund_person.png', dpi = 600)
+
+cor.test(otutabA$norm_abund.x, otutabA$norm_abund.y, method = 'pearson')
 
 # top 5 otus 
 otutabA %>%
@@ -567,7 +572,8 @@ cum_otus_person %>% filter(Cumulative_Percentage < 95) %>%
   ggplot(aes(x =person, y = n, fill = biota)) +
   geom_bar(stat = 'identity', width=.5, position = "dodge") +
   annotate('text', x = 2, y = 220, label = 'Microbiota samples: 101 OTUs represent 90%
-        Ethanol resistant samples: 20 OTUs represent 90%')
+        Ethanol resistant samples: 20 OTUs represent 90%') +
+  labs(fill = '')
 ggsave('out/exploration/numberOTUs90%ofAbundance.png', dpi = 600)
 
 # Compare absolute abundances 
@@ -762,7 +768,8 @@ individual <- ggplot(var_host_population, aes(x = person, y = var_person/var_pop
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   #geom_hline(yintercept = 1) +
   labs(x = 'Individuals', y= 'Individual variance of log(mi/ni) / Population variance of log (mi/ni)', color = '')
-ggsave('out/submission/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
+individual
+ggsave('out/exploration/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 # Same plot, but x axis is OTUs
 otu_order <- var_host_population %>%
@@ -778,10 +785,11 @@ otus <- var_host_population %>%
   #filter(var_population > 0) %>%
   ggplot(aes(x = name, y = var_person/var_population)) +
   geom_boxplot() +
-  geom_jitter(aes(color = person), size = 3) +
+  geom_jitter() +
   #geom_hline(yintercept = 1) +
   labs(x = 'OTUs', y= 'Individual variance of log(mi/ni) / Population variance of log (mi/ni)', color = 'Individual') +
   theme(legend.position = 'right', axis.text.x = element_blank())
+otus
 ggsave('out/exploration/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 
@@ -827,6 +835,7 @@ days <- otutabMN %>%
   facet_wrap(~person) +
   scale_y_log10() +
   labs(x = 'Day', y = 'log10(mi/ni) / mean(log10(mi/ni))', color = '')
+days
 ggsave('out/exploration/mini_days_person.png', dpi=600)
 
 
@@ -969,75 +978,4 @@ ggplot(results, aes(x = name, y = name2, fill = value)) +
   facet_wrap(~person, nrow = 3, scales = 'free')
 ggsave('out/exploration/heatmap_byperson.png', height = 20, width = 20, units = 'cm', dpi=600)
 
-# # Distribution of OTUs correlation between them selves in differnt individuals 
-# results %>%
-#   filter(name != name2) %>%
-#   ggplot(aes(x = value)) +
-#   geom_density() +
-#   labs(x = 'Correlation value', y = 'Density', color = 'Individual')
-# ggsave('out/exploration/OTU_correlation.png', dpi= 600)
-# 
-# results %>% 
-#   filter(name != name2) %>%
-#   mutate(value2 = 1) %>%
-#   ggplot(aes(y=value, x = value2)) +
-#   geom_violin()
-# 
-# # dISTRIBUTION OF VAR MI(NI) OTUS
-# otu_rel = otutab_absrel %>%
-#   group_by(name) %>%
-#   summarise(mean_rel = mean(rel_abund))
-# 
-# rel_mn = otutabMN %>% 
-#   group_by(name) %>%
-#   reframe(var = var(log(mi/ni))) %>%
-#   left_join(otu_rel, by = 'name' ) %>%
-#   left_join(taxtab, by = 'name')
-# 
-# cor.test(rel_mn$var, rel_mn$mean_rel, method = 'pearson')
-# 
-# # Are there still differences in the spore production even if looking at each individual?
-# corr_family = data.frame()
-# for (p in unique(otutabMN$person)) {
-#   otu_rel = otutab_absrel %>%
-#     left_join(metadata, by = 'Group') %>%
-#     filter(person == p)  %>%
-#     group_by(name) %>%
-#     summarise(mean_rel = mean(rel_abund))
-#   
-#   otu_sub = otutabMN %>% 
-#     filter(person == p)  %>%
-#     group_by(name) %>%
-#     reframe(var = var(log(mi/ni))) %>%
-#     left_join(otu_rel, by = 'name' ) %>%
-#     left_join(taxtab, by = 'name')
-#     
-#   cor = kruskal.test(otu_sub$var, otu_sub$Family)
-#   
-#   corr_family = rbind(corr_family, data.frame(pvalue = cor$p.value, 
-#                                               person = p, 
-#                                               statistic = cor$statistic))
-#   
-# }
-# 
-# corr_family
-# 
-# # why am I looking at variation in spore production in each Family, what about plain spore production mi/ni ? 
-# otutabMN %>%
-#   left_join(taxtab, by = 'name' ) %>%
-#   ggplot(aes(x = Family, y = log(mi/ni))) +
-#   geom_boxplot() +
-#   theme(axis.text.x = element_text(angle=90))
-# 
-# # Level of Genus ?
-# otutabMN %>% 
-#   group_by(name) %>%
-#   reframe(var = var(log(mi/ni), na.rm=TRUE)) %>%
-#   left_join(taxtab, by = 'name' ) %>%
-#   ggplot(aes(x = reorder(Genus, var), y = var, color = Genus)) +
-#   geom_violin() +
-#   geom_jitter() +
-#   theme(axis.text.x = element_text(angle=90))
-# 
-# # statistics 
-# kruskal.test(rel_mn$var, rel_mn$Family)
+
