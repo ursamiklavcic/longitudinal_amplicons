@@ -271,7 +271,7 @@ calculate_dist <- function(otu_data, method) {
     pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
     column_to_rownames('Group')
   
-  for (i in 1:9) {
+  for (i in 1:999) {
     # Resample OTUs within each fraction
     otutab_t <- t(otutab)
     resampled_t <- otutab_t[sample(1:nrow(otutab_t), size = min, replace = TRUE), ]
@@ -536,7 +536,7 @@ calculate_unifrac <- function(seq_tab, method) {
     pivot_wider(names_from = name, values_from = value, values_fill = 0) %>%
     column_to_rownames('Group')
   
-  for (i in 1:9) {
+  for (i in 1:999) {
     # Resample OTUs within each fraction
     tab_t <- t(seq_table)
     # Perform resampling
