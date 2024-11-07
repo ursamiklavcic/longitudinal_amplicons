@@ -203,6 +203,23 @@ ggarrange(host_population_A, days + labs(tag = 'C'), common.legend = FALSE, nrow
           heights = c(1, 1))
 ggsave('out/exploration/varhost_varpopulation_all3_alternative.png', dpi=600)
 
+# Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
+kruskal.test(var_person/var_population ~ person, data = var_host_population)
+
+# Pairwise comparison 
+pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_population,
+                     var_host_population$person,
+                     p.adjust.method = "BH")
+
+# For OTUs 
+kruskal.test(var_person/var_population ~ name, data = var_host_population)
+
+# Pairwise comparison 
+pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_population,
+                     var_host_population$name,
+                     p.adjust.method = "BH")
+
+
 ##
 # Are OTUs dependant on the day? 
 # Compare this quantaties obtained from data and from independently shuffled days within this data!  
