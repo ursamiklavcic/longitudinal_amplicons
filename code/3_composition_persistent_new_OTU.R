@@ -25,6 +25,38 @@ taxtab <- readRDS('data/r_data/taxtab.RDS')
 otu_etoh <- readRDS('data/r_data/etoh_otus.RDS') 
 otu_all <- readRDS('data/r_data/otutab_long_fractions.RDS')
 
+# 
+otutab <- readRDS('data/r_data/otutabEM.RDS') 
+
+otutab_long <- otutab %>%
+  as.data.frame() %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(values_to = 'value', names_to = 'name', cols = starts_with('Otu')) %>%
+  left_join(metadata, by = 'Group') %>%
+  left_join(taxtab, by = 'name')
+
+otu_rel <- otutab_long %>% 
+  group_by(Group) %>%
+  mutate(rel_abund = value/sum(value)) %>%
+  ungroup()
+
+otu_rel %>%
+  group_by(biota) %>%
+  mutate(x = (rel_abund / sum(rel_abund)) * 100 ) %>%
+  ungroup() %>%
+  mutate(Class = ifelse(x > 0.01, Class, 'Less than 0.01%')) %>%
+  ggplot(aes(x = biota, y = x, fill = Class)) +
+  geom_bar(stat = 'identity') +
+  labs(x = '', y = 'Relative abundance aggregated across individuals')
+ggsave('out/exploration/relabund_fractions.png', dpi = 600)
+
+otutab_all <- readRDS('data/r_data/otutab_all_fractions.RDS')
+
+otutab_long <- otutab_all %>%
+  rownames_to_column('Group') %>%
+  pivot_longer(values_to = 'value', names_to = 'name', cols = starts_with('Otu'))
+
+
 # Composition of ethanol resistant fraction and non-ethanol resistant fraction in numbers
 # Number of unique OTUs detected in this study 
 otu_long %>%
