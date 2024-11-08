@@ -74,12 +74,49 @@ otu_long %>%
 
 # Number of OTUs detected in both microbiota and ethanol resistant fraction
 otu_long_both <- otu_long %>% filter(substr(Group, 1, 1) == 'M') %>%
-  full_join(filter(otu_long, substr(Group, 1, 1) == 'S'), by = join_by('name', 'person', 'day', 'original_sample', 'Domain', 'Phylum', 'Class', 'Family', 'Order', 'Genus')) 
+  full_join(filter(otu_long, substr(Group, 1, 1) == 'S'), by = join_by('name', 'person', 'date', 'original_sample', 'Domain', 'Phylum', 'Class', 'Family', 'Order', 'Genus')) 
 
 otu_long_both %>%
   filter(PA.x == 1 & PA.y == 1) %>%
   summarize(no_otus = n_distinct(name)) 
 # In both samples we detected 1475 unique OTUs
+
+etoh_tab <- otutab_absrel %>%
+  filter(substr(Group, 1, 1) == 'S') %>%
+  left_join(select(metadata, Group, original_sample, person, day), by ='Group') %>%
+  left_join(filter(otutab_absrel, substr(Group, 1, 1) == 'M') %>%
+              left_join(select(metadata, Group, original_sample), by ='Group'), by = c('original_sample', 'name')) %>%
+  filter(value.x == 0 & value.y > 0) %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(value.y > 10)
+
+etoh_tab %>%
+  group_by(name) %>%
+  summarise(sum_rel = sum(rel_abund.y)) %>%
+  left_join(taxtab, by = 'name') %>%
+  ggplot(aes(x = Phylum, y = sum_rel)) +
+  geom_boxplot() +
+  scale_y_log10()
+
+etoh_tab %>% summarise(sum(rel_abund.y))
+
+etoh_tab %>% ggplot(aes(x = Phylum, y = rel_abund.y)) +
+  geom_jitter() +
+  scale_y_log10()
+
+etoh_tab %>%
+  mutate(group = 'x') %>%
+  ggplot(aes(x = group, y = rel_abund.y, fill = Phylum)) +
+  geom_col() +
+  scale_y_log10()
+
+etoh_tab %>% group_by(Phylum) %>%
+  summarise(sum_rel = sum(rel_abund.y)) %>%
+  ungroup() %>%
+  mutate(percent = sum_rel/sum(sum_rel)*100)
+
+etoh_tab %>% group_by(Phylum) %>%
+  summarise(mean_rel = mean(rel_abund.y))
 
 # By individual 
 # Unique OTUs in each individal 
