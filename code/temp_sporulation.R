@@ -15,6 +15,9 @@ ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
 otu_long <- readRDS('data/r_data/otu_long.RDS')
 
+sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
+  pull(unique(name))
+
 # Create a table for comparisons 
 otutab_norm <- otutab_absrel %>%
   filter(substr(Group, 1, 1) == 'M') %>%
@@ -28,6 +31,61 @@ otutab_norm <- otutab_absrel %>%
   mutate(mi = norm_abund.x, ei = norm_abund.y)
 
 # Justification of the usage of sporulation frequency! look into 6_sporulation_frequency.R
+# Main plots for supplement and correlations here: 
+# Relative abundances 
+results <- data.frame() 
+for (i in unique(otutab_norm$person)) {
+  otutab_filt <- filter(otutab_norm, person == i) %>%
+    filter(name %in% sporeformers_list)
+  res <- cor.test(otutab_filt$rel_abund.x, otutab_filt$rel_abund.y, method = 'pearson')
+  
+  # Append the correlation and p-value results to cor_results
+  results <- rbind(cor_results, data.frame(person = i,  # Add person ID for clarity
+                                               corr = res$estimate,
+                                               pvalue = res$p.value))
+}
+
+results
+
+otutab_norm %>% 
+  filter(name %in% sporeformers_list) %>%
+  ggplot(aes(x = rel_abund.x, y = rel_abund.y)) +
+  geom_point() +
+  geom_abline() +
+  geom_text(data = cor_results, aes(x = 1e-4, y = 1, label = paste('p-value =', scientific(pvalue, digits = 2)))) +
+  scale_y_log10() +
+  scale_x_log10() +
+  facet_wrap(~person, ncol = 3) +
+  labs(x = 'Relative abundance in bulk microbiota sample', y = 'Relative abundance in ethanol resistant sample' )
+ggsave('out/exploration/supplementary5.png', dpi=600)
+
+# Normalized abundances 
+cor_results <- data.frame() 
+for (i in unique(otutab_norm$person)) {
+  otutab_filt <- filter(otutab_norm, person == i) %>%
+    filter(name %in% sporeformers_list)
+  res <- cor.test(otutab_filt$mi, otutab_filt$ei, method = 'pearson')
+  
+  # Append the correlation and p-value results to cor_results
+  cor_results <- rbind(cor_results, data.frame(person = i,  # Add person ID for clarity
+                                               corr = res$estimate,
+                                               pvalue = res$p.value))
+}
+
+cor_results
+
+otutab_norm %>% 
+  filter(name %in% sporeformers_list) %>%
+  ggplot(aes(x = ei, y = mi)) +
+  geom_point() +
+  geom_abline() +
+  geom_text(data = cor_results, aes(x = 1e7, y = 1e5, label = paste('p-value =', scientific(pvalue, digits = 2)))) +
+  scale_y_log10() +
+  scale_x_log10() +
+  facet_wrap(~person, ncol = 3) +
+  labs(x = 'Normalized abundance in ethanol resistant sample', y = 'Normalized abundance in bulk microbiota sample' )
+ggsave('out/exploration/supplementary6.png', dpi=600)
+
 
 # Figure out if mi/ei is correlated: 
 # a) within a person ? 
@@ -56,7 +114,7 @@ otu_alwaysS = otuPA %>%
   rownames_to_column('name') %>%
   pull(name)
 
-otu_90 = intersect(otu_always, otu_alwaysS)
+otu_90 = intersect(otu_alwaysM, otu_alwaysS)
 
 # Variance of log(mi/ni)
 otutabME <- otutab_norm %>%
@@ -72,6 +130,7 @@ otutabME %>%
   labs(x = 'Day', y = 'log10 (mi/ei)') +
   facet_wrap(~person, scales = 'free')
 ggsave('out/exploration/logmiei_person_time.png', dpi = 600)
+
 
 ##
 # Is the variance of an OTU correlated with HOST 
