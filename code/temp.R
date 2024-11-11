@@ -304,19 +304,21 @@ table <- core_otus_fraction %>%
 chi_test <- chisq.test(table)
 chi_test$residuals
 
+core_otus_fraction$fraction = factor(core_otus_fraction$fraction, levels = c('Other non-ethanol resistant taxa', 'Other ethanol resistant taxa', 'Non-ethanol resistant Bacillota', 'Ethanol resistant Bacillota'))
+
 # Plot 
-core_otus_fraction %>%
-  mutate(shared = ifelse(sum_all == 1, 'Single individual', 'Shared'))  %>%
+otus_fraction_shared <- core_otus_fraction %>%
+  mutate(shared = ifelse(sum_all > 1, 'Shared', 'Single individual'))  %>%
   group_by(fraction, shared) %>%
   summarise(no_otus = sum(number_otus), .groups = 'drop') %>%
   group_by(fraction) %>%
   mutate(percent = no_otus/sum(no_otus)*100) %>%
   ggplot(aes(x = percent, y = fraction, fill = shared)) +
   geom_col() +
-  scale_fill_manual(values = c('#5dade2', '#f4d03f')) +
+  scale_fill_manual(values = c('#e7ab4f', '#e7dd4f')) +
   labs(x = '% OTUs', y = '', fill = '') +
-  theme(legend.position = 'bottom') +
   labs(caption = paste('p-value =', scientific(chi_test$p.value, digits = 2)))
+otus_fraction_shared
 ggsave('out/exploration/shared_single_fractions.png', dpi=600)
 
 # Beta diversity 
@@ -795,7 +797,10 @@ ggarrange(b_time + labs(tag = 'A'), j_time + labs(tag = 'B'),
           nrow = 2, ncol = 2, common.legend = TRUE, legend = 'bottom')
 ggsave('out/exploration/supplement_figure2.png', dpi=600)
 
-
+##
+ggarrange(bray_boxplot + labs(tag = 'A'), otus_fraction_shared + labs(tag = 'B'), 
+          ncol = 1, heights = c(1, 0.7))
+ggsave('out/exploration/figure1_alt.png', dpi=600)
 ## Suppelemnt PowerFecal
 library(readxl)
 
