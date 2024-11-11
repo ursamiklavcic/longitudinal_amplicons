@@ -284,10 +284,10 @@ pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_po
 # Compare this quantaties obtained from data and from independently shuffled days within this data!  
 # For each host; for each day calculate the variance over OTUs and average across days
 base <- otutabME %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
+  filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   # variance of all OTUs in a day
   group_by(person, day) %>%
-  summarise(var_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
   # avergae variance of OTUs across days 
   group_by(person) %>%
   mutate(mean_var_day = mean(var_day)) %>%
@@ -301,20 +301,25 @@ otutabME_shuffled <- otutabME %>%
 
 # For each host; for each day calculate the variance over OTUs and averge over days on resuffled data! 
 shuffled <- otutabME_shuffled %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
+  filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(person, day) %>%
-  summarise(var_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
   group_by(person) %>%
   mutate(mean_var_day = mean(var_day)) %>%
   ungroup()
 
-mutate(base, data ='normal') %>%
+base_shuffled <- mutate(base, data ='normal') %>%
   left_join(mutate(shuffled, data = 'shuffled'), by = c('person', 'day')) %>%
   mutate(a = var_day.x/mean_var_day.x, 
-         b = var_day.y/mean_var_day.y) %>%
+         b = var_day.y/mean_var_day.y) 
+base_shuffled_res <- cor.test(base_shuffled$a, base_shuffled$b, method = 'pearson')
+
+base_shuffled %>%
   ggplot(aes(x = a, y = b)) +
   geom_point(size = 3) +
   geom_abline() +
+  annotate('text', x= 0.6, y = 1.5, label = paste("Pearson's correlation:", round(base_shuffled_res$estimate, digits = 3), '\n', 
+                                                  "p-value =", round(base_shuffled_res$p.value, digits = 2))) +
   labs(x = 'Individuals variance of log(mi/ni) in a day / Mean individuals variance of log(mi/ni)', y= 'Reshuffled individuals variance of log(mi/ni) in a day / Mean individuals variance of log(mi/ni)') 
 ggsave('out/exploration/statistics_variance_days.png', dpi = 600)
 
