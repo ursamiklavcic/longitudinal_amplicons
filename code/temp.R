@@ -61,15 +61,32 @@ etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'),
   pull(unique(name))
 #saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
 
+uncertain_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                                         otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
+                                         by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
+  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
+  group_by(name) %>%
+  reframe(no_present = sum(PA.x), 
+          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
+  ungroup() %>%
+  # Filter OTUs that were detected as EtOH resistant at least once, but were detected as such in less than 5% of samples, to exclude them from the analysis 
+  filter(no_Yes > 1) %>%
+  filter(no_Yes < (no_present * 0.05)) %>%
+  pull(unique(name))
+
+nonetoh_otus <- otu_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
+  filter(!(name %in% uncertain_otus) & !(name %in% etoh_otus)) %>%
+  pull(unique(name))
+
+
 # Create the 4 fractions 
 # Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
-
 # At the level of Bacillota 
 etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
   mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
 # min = 78
 
-non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% etoh_otus) & Phylum == 'Firmicutes') %>%
+non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum == 'Firmicutes') %>%
   mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
 # min = 343
 
@@ -77,21 +94,23 @@ etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus 
   mutate(Group = paste0(Group, "-E"), fraction = 'Other ethanol resistant taxa') 
 # min = 24
 
-non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & !(name %in% etoh_otus) & Phylum != 'Firmicutes') %>% 
+non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum != 'Firmicutes') %>% 
   mutate(Group = paste0(Group, "-NE"), fraction = 'Other non-ethanol resistant taxa')
 # min = 64
 
 # How many, where ? 
-# Composition of ethanol resistant fraction and non-ethanol resistant fraction in numbers
+# Composition of ethanol resistant samples and bulk microbiota samples in numbers
 # Number of unique OTUs detected in this study 
 otu_long %>%
   filter(PA == 1) %>%
   summarise(no_otus = n_distinct(name))
 # we found 2574 OTUs in both types of samples 
+
 otu_long %>%
   filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
   summarise(no_otus = n_distinct(name))
 # In bulk microbiota samples only 2433!; 141 OTus were found only in ethanol resistant samples! 
+
 otu_long %>%
   filter(substr(Group, 1, 1) == 'S' & PA == 1) %>%
   summarise(no_otus = n_distinct(name))
@@ -105,12 +124,6 @@ otu_long_both %>%
   filter(PA.x == 1 & PA.y == 1) %>%
   summarize(no_otus = n_distinct(name)) 
 # In both samples we detected 1475 unique OTUs
-
-otu_long_both %>%
-  filter(PA.x == 1 & PA.y == 1 & name %in% etoh_otus) %>%
-  group_by(Phylum) %>%
-  summarise(no_otus = n_distinct(name))
-
 
 ##
 # Number of OTUs shared
@@ -127,33 +140,74 @@ otu_present_individual <- long_all %>%
   filter(otu_cumsum >= 4) %>%
   distinct(name, person, fraction) %>%
   group_by(name, fraction) %>%
-  summarise(no_person = (n_distinct(person)/9 )*100) %>%
+  summarise(no_person = (n_distinct(person))) %>%
   ungroup() %>%
   group_by(fraction, no_person) %>%
-  summarise(no_otus = n_distinct(name)) %>%
-  ungroup() 
+  reframe(no_otus = n_distinct(name), 
+          otu_names = list(unique(name))) %>%
+  mutate(is_ethanol_resistant = ifelse(fraction %in% c('Ethanol resistant Bacillota', 'Other ethanol resistant taxa'), 
+                                       'Ethanol resistant', 'Non-ethanol resistant'))
 
-all_fraction <- long_all %>%
-  group_by(name, person, fraction) %>%
-  arrange(date, .by_group = TRUE) %>%
-  # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
-  reframe(otu_cumsum = cumsum(PA)) %>%
-  # If OTU was detected in at least 1/3 of all samples of an individual, than it was there! 
-  filter(otu_cumsum >= 4) %>%
-  group_by(fraction) %>%
-  summarise(all_fraction = n_distinct(name))
 
-long_all %>%
-  filter(PA == 1) %>%
-  group_by(fraction) %>%
-  summarise(all_fraction = n_distinct(name))
+## How many unique OTUs are present in each person? Under the assumption that 1/3 is present! 
+core_ethanol <- otu_present_individual %>%
+  mutate(shared = ifelse(no_person == 1, 'Single individual', 'Shared')) %>%
+  group_by(is_ethanol_resistant, shared) %>%
+  summarise(all_otus = sum(no_otus)) %>%
+  ungroup() %>%
+  pivot_wider(values_from = all_otus, names_from = shared)
 
+# Create the matrix for Fisher's Exact Test
+otu_matrix <- column_to_rownames(core_ethanol, 'is_ethanol_resistant') %>% 
+  as.matrix()
+# The test
+res_fisher <- fisher.test(otu_matrix)
+
+# Plot 
 otu_present_individual %>%
-  left_join(all_fraction, by = 'fraction') %>%
-  ggplot(aes(x = (no_otus/all_fraction)*100, y = no_person, color = fraction)) +
-  geom_point(size = 3) +
-  labs(x = 'OTUs [%]', y = 'Individuals [%]', color = '')
-ggsave('out/exploration/percent_otus_percent_individuals.png', dpi = 600)
+  mutate(shared = ifelse(no_person == 1, 'Single individual', 'Shared')) %>%
+  group_by(is_ethanol_resistant, shared) %>%
+  summarise(no_otus = sum(no_otus), .groups = 'drop') %>%
+  group_by(is_ethanol_resistant) %>%
+  mutate(percent = no_otus/sum(no_otus)*100) %>%
+  ggplot(aes(x = percent, y = is_ethanol_resistant, fill = shared)) +
+  geom_col() +
+  scale_fill_manual(values = c('#5dade2', '#f4d03f')) +
+  labs(x = '% OTUs', y = '', fill = '') +
+  theme(legend.position = 'bottom') +
+  labs(caption = paste('p-value =', scientific(res_fisher$p.value, digits = 2), 
+                       '\n', 'odds =', round(res_fisher$estimate, digits = 2)))
+ggsave('out/exploration/shared_ethn_or_not.png', dpi= 600)
+
+# How many OTUs are present in a single person/shared for each fraction
+core_fraction <- otu_present_individual %>%
+  mutate(shared = ifelse(no_person == 1, 'Single individual', 'Shared')) %>%
+  group_by(fraction, shared) %>%
+  summarise(all_otus = sum(no_otus)) %>%
+  ungroup() %>%
+  pivot_wider(values_from = all_otus, names_from = shared) 
+
+table <- core_fraction %>%
+  column_to_rownames('fraction')
+
+# 
+chi_test <- chisq.test(table)
+chi_test$residuals
+
+core_fraction$fraction = factor(core_fraction$fraction, levels = c('Other non-ethanol resistant taxa', 'Other ethanol resistant taxa', 
+                                                                   'Non-ethanol resistant Bacillota', 'Ethanol resistant Bacillota'))
+# Plot 
+otus_fraction_shared <- core_fraction %>%
+  pivot_longer(values_to = 'no_otus', names_to = 'shared', cols = starts_with('S')) %>%
+  group_by(fraction) %>%
+  mutate(percent = no_otus/sum(no_otus)*100) %>%
+  ggplot(aes(x = percent, y = fraction, fill = shared)) +
+  geom_col() +
+  scale_fill_manual(values = c('#e7ab4f', '#e7dd4f')) +
+  labs(x = '% OTUs', y = '', fill = '') +
+  labs(caption = paste('p-value =', scientific(chi_test$p.value, digits = 2)))
+otus_fraction_shared
+ggsave('out/exploration/shared_single_fractions_uncertain_removed.png', dpi=600)
 
 # Figure 1 
 # What percentage of relative abundance are OTUs that are ethanol resistant ? 
@@ -235,91 +289,6 @@ ggsave('out/exploration/figure1.png', dpi=600)
 # Are ethanol resistant OTUs more likely to be shared or present in a single individual? 
 # An OTU is present in an individual, if we saw it in at elast 1/3 of the samples (n=4).
 
-## How many unique OTUs is present in each person? Under the assumption that 1/3 is present  
-core_otus <- long_all %>%
-  group_by(name, person, fraction) %>%
-  arrange(date, .by_group = TRUE) %>%
-  # Create new column otu_sum is 1 if the OTU is present (PA > 0) on the current day and was not present on any of the previous days
-  reframe(otu_cumsum = cumsum(PA)) %>%
-  # If OTU was detected in at least 1/3 of all samples of an individual, than it was there!
-  filter(otu_cumsum >= 4) %>%
-  distinct(fraction, person, name) %>%
-  mutate(is_ethanol_resistant = ifelse(fraction %in% c('Ethanol resistant Bacillota', 'Other ethanol resistant taxa'), 'Ethanol resistant', 'Non-ethanol resistant'))
-
-core_all <- core_otus %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = 'person', values_from = 'value', values_fill = 0) %>%
-  group_by(is_ethanol_resistant, name) %>%
-  summarise(sum_all = sum(A+B+C+D+E+F+G+H+I), .groups = 'drop') %>%
-  group_by(is_ethanol_resistant, sum_all) %>%
-  summarise(number_otus = n_distinct(name), .groups = 'drop')
-
-# Fisher's exact test
-shared_table <- core_all %>%
-  mutate(shared = ifelse(sum_all == 1, 'Single individual', 'Shared')) %>%
-  group_by(is_ethanol_resistant, shared) %>%
-  summarise(count = sum(number_otus), .groups = 'drop') %>%
-  pivot_wider(names_from = shared, values_from = count, values_fill = 0)
-# Create the matrix for Fisher's Exact Test
-otu_matrix <- column_to_rownames(shared_table, 'is_ethanol_resistant') %>% 
-  as.matrix()
-# The test
-res_fisher <- fisher.test(otu_matrix)
-
-# Plot 
-core_all %>%
-  mutate(shared = ifelse(sum_all == 1, 'Single individual', 'Shared'))  %>%
-  group_by(is_ethanol_resistant, shared) %>%
-  summarise(no_otus = sum(number_otus), .groups = 'drop') %>%
-  group_by(is_ethanol_resistant) %>%
-  mutate(percent = no_otus/sum(no_otus)) %>%
-  ggplot(aes(x = percent*100, y = is_ethanol_resistant, fill = shared)) +
-  geom_col() +
-  scale_fill_manual(values = c('#5dade2', '#f4d03f')) +
-  labs(x = '% OTUs', y = '', fill = '') +
-  theme(legend.position = 'bottom') +
-  labs(caption = paste('p-value =', scientific(res_fisher$p.value, digits = 2), 
-                     '\n', 'odds =', round(res_fisher$estimate, digits = 2)))
-ggsave('out/exploration/shared_ethn_or_not.png', dpi= 600)
-
-# How many OTUs are present in a single person/shared for each fraction
-core_otus_fraction <- core_otus %>%
-  mutate(value = 1) %>%
-  pivot_wider(names_from = 'person', values_from = 'value', values_fill = 0) %>%
-  group_by(fraction, name) %>%
-  summarise(sum_all = sum(A+B+C+D+E+F+G+H+I), .groups = 'drop') %>%
-  group_by(fraction, sum_all) %>%
-  summarise(number_otus = n_distinct(name), .groups = 'drop')
-
-# Chi's squared test
-table <- core_otus_fraction %>%
-  mutate(shared = ifelse(sum_all == 1, 'Single individual', 'Shared')) %>%
-  group_by(fraction, shared) %>%
-  summarise(count = sum(number_otus), .groups = 'drop') %>%
-  pivot_wider(names_from = shared, values_from = count, values_fill = 0) %>%
-  column_to_rownames('fraction') %>%
-  t()
-
-# 
-chi_test <- chisq.test(table)
-chi_test$residuals
-
-core_otus_fraction$fraction = factor(core_otus_fraction$fraction, levels = c('Other non-ethanol resistant taxa', 'Other ethanol resistant taxa', 'Non-ethanol resistant Bacillota', 'Ethanol resistant Bacillota'))
-
-# Plot 
-otus_fraction_shared <- core_otus_fraction %>%
-  mutate(shared = ifelse(sum_all > 1, 'Shared', 'Single individual'))  %>%
-  group_by(fraction, shared) %>%
-  summarise(no_otus = sum(number_otus), .groups = 'drop') %>%
-  group_by(fraction) %>%
-  mutate(percent = no_otus/sum(no_otus)*100) %>%
-  ggplot(aes(x = percent, y = fraction, fill = shared)) +
-  geom_col() +
-  scale_fill_manual(values = c('#e7ab4f', '#e7dd4f')) +
-  labs(x = '% OTUs', y = '', fill = '') +
-  labs(caption = paste('p-value =', scientific(chi_test$p.value, digits = 2)))
-otus_fraction_shared
-ggsave('out/exploration/shared_single_fractions.png', dpi=600)
 
 # Beta diversity 
 # Function to calculate beta distances (Bray-Curtis OR Jaccard) 
@@ -379,9 +348,8 @@ bray <- calculate_dist(etoh_bacillota, 'bray') %>%
   rbind(calculate_dist(etoh_other, 'bray')) %>%
   rbind(calculate_dist(non_etoh_other, 'bray'))
 
-bray$fraction <- factor(bray$fraction, levels = c('Ethanol resistant Bacillota',  'Non-ethanol resistant Bacillota',
-                                                  'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
-
+bray$fraction <- factor(bray$fraction, levels = c('Other non-ethanol resistant taxa', 'Other ethanol resistant taxa',
+                                                  'Non-ethanol resistant Bacillota', 'Ethanol resistant Bacillota'))
 # Kruskal test for Bray-Curtis distances 
 # Within individual 
 bray_within <- filter(bray, same_person == 'Within individual')
@@ -406,6 +374,24 @@ wilcox_bray <- rbind(wilcox_between %>% mutate(same_person = 'Between individual
 
 
 # Plot 
+ggplot(bray) +
+  geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
+  geom_text(data = wilcox_bray, mapping = aes(y = .05, x = group2, label = paste('p-value:', p.format)), size = 3, hjust = 'left', vjust = -8) +
+  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
+  geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
+  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
+  geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
+  geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
+  geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
+  scale_fill_manual(values = col_boxplot) +
+  labs(y='Bray-Curtis distance', x='', fill='') +
+  theme(legend.position = 'none') +
+  facet_grid(~same_person) +
+  coord_flip()
+ggsave('out/exploration/bray_boxplot.png', dpi = 600)
+
+bray$fraction <- factor(bray$fraction, levels = c('Ethanol resistant Bacillota',  'Non-ethanol resistant Bacillota',
+                                                  'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
 bray_boxplot <- ggplot(bray) +
   geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
   geom_text(data = wilcox_bray, mapping = aes(y = .05, x = group1, label = paste('p-value =', p.adj)), size = 3, hjust = 'left') +
@@ -420,8 +406,6 @@ bray_boxplot <- ggplot(bray) +
   theme(axis.text.x = element_blank(), legend.position = 'bottom', axis.ticks.x = element_blank()) +
   guides(fill = guide_legend(ncol = 4)) +
   facet_grid(~same_person) 
-bray_boxplot
-ggsave('out/exploration/bray_boxplot.png', dpi = 600)
 
 # Correlations for distance / time 
 time_corr <- function(data) {
@@ -444,6 +428,7 @@ time_corr <- function(data) {
 
 # Calculate correaltions between diff (time between samplings) and distance metric
 bray_corr_time <- time_corr(time_bray)
+bray_corr_time
 
 time_bray <- bray %>%
   # Filter different individuals
@@ -534,7 +519,7 @@ j_time
 ggsave('out/exploration/time_jaccard.png', dpi=600)
 
 j_time_corr <- time_corr(time_jaccard)
-
+j_time_corr
 
 # 
 # Sequences 
@@ -553,39 +538,57 @@ seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>%
 
 # OTU that is ethanol resistant once is always ethanol resistant 
 etoh_seq <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                       seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
-                       by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
+                      seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
+                      by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
   # Define if a sequence in a sample of stool is ethanol resistant 
   # Contition 1: present in both bulk microbiota sample and ethanol resistant fraction
   # Condition 2: higher relative abudnance in EtOH sample than microbiota
   mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
   group_by(name) %>%
-          # Calculate the number of times this OTU was present in samples
+  # Calculate the number of times this OTU was present in samples
   reframe(no_present = sum(PA.x), 
           # Caluclate how many times OTU was defined as part of EtOH fraction based on Conditions 1 & 2
           no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
   ungroup() %>%
   # OTUs that have been defined as part Of the ethanol resistant fraction in at least 10% of samples where they were found! 
   # (to avoid mistakes of protocol and exclude highly abundant OTUs that maybe were seen as ethanol resistant but just didn't get destoryed!)
-  filter(no_Yes > 1) %>%
+  filter(no_Yes > (no_present * 0.05)) %>%
   # Extract names! 
   pull(unique(name))
 
+uncertain_seqs <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
+                            seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
+                            by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
+  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
+  group_by(name) %>%
+  reframe(no_present = sum(PA.x), 
+          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
+  ungroup() %>%
+  # Filter OTUs that were detected as EtOH resistant at least once, but were detected as such in less than 5% of samples, to exclude them from the analysis 
+  filter(no_Yes > 1) %>%
+  filter(no_Yes < (no_present * 0.05)) %>%
+  pull(unique(name))
+
+nonetoh_seqs <- seq_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
+  filter(!(name %in% uncertain_seqs) & !(name %in% etoh_seq)) %>%
+  pull(unique(name))
+
 # Create the 4 fractions 
-# Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
+# Ethanol resistant OTUs AND non-ethanol resistant seqs + divide by phylum (Bacillota + other)
 
 # At the level of Bacillota 
 etoh_bacillota <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% etoh_seq & Phylum == 'Firmicutes') %>%
   mutate(Group = paste0(Group, "-EB"), fraction = 'Ethanol resistant Bacillota')
 
-non_etoh_bacillota <-  filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% etoh_seq) & Phylum == 'Firmicutes') %>%
+non_etoh_bacillota <-  filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_seqs & Phylum == 'Firmicutes') %>%
   mutate(Group = paste0(Group, "-NB"), fraction = 'Non-ethanol resistant Bacillota')
 
 etoh_other <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% etoh_seq & Phylum != 'Firmicutes') %>%
   mutate(Group = paste0(Group, "-E"), fraction = 'Other ethanol resistant taxa') 
 
-non_etoh_other <- filter(seq_long, substr(Group, 1, 1) == 'M' & !(name %in% etoh_seq) & Phylum != 'Firmicutes') %>% 
+non_etoh_other <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_seqs & Phylum != 'Firmicutes') %>% 
   mutate(Group = paste0(Group, "-NE"), fraction = 'Other non-ethanol resistant taxa')
+
 
 # Function to calculate unifrac
 calculate_unifrac <- function(seq_tab, method) {
@@ -801,6 +804,9 @@ ggsave('out/exploration/supplement_figure2.png', dpi=600)
 ggarrange(bray_boxplot + labs(tag = 'A'), otus_fraction_shared + labs(tag = 'B'), 
           ncol = 1, heights = c(1, 0.7))
 ggsave('out/exploration/figure1_alt.png', dpi=600)
+
+
+
 ## Suppelemnt PowerFecal
 library(readxl)
 
