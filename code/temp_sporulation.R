@@ -1,19 +1,20 @@
-library(dplyr)
-library(tidyr)
-library(tibble)
-library(ggplot2)
-library(ggpubr)
-
-set.seed(96)
-theme_set(theme_bw())
-
-# Import data 
-otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
-metadata <- readRDS('data/r_data/metadata.RDS')
-taxtab <- readRDS('data/r_data/taxtab.RDS')
-ddPCR <- readRDS('data/r_data/ddPCR.RDS')
-etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
-otu_long <- readRDS('data/r_data/otu_long.RDS')
+# library(dplyr)
+# library(tidyr)
+# library(tibble)
+# library(ggplot2)
+# library(ggpubr)
+# library(forcats)
+# 
+# set.seed(96)
+# theme_set(theme_bw())
+# 
+# # Import data 
+# otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
+# metadata <- readRDS('data/r_data/metadata.RDS')
+# taxtab <- readRDS('data/r_data/taxtab.RDS')
+# ddPCR <- readRDS('data/r_data/ddPCR.RDS')
+# etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
+# otu_long <- readRDS('data/r_data/otu_long.RDS')
 
 sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
   pull(unique(name))
@@ -170,32 +171,23 @@ person_order <- var_host_population %>%
 
 var_host_population$person <- factor(var_host_population$person, levels = person_order)
 
-individual <- ggplot(var_host_population, aes(x = person, y = var_person/var_population)) +
+individual <- ggplot(var_host_population, aes(x = fct_rev(person), y = var_person/var_population)) +
   geom_boxplot() +
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   #geom_hline(yintercept = 1) +
-  labs(x = 'Individuals', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)', color = '')
+  labs(x = 'Individuals', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)', color = '') +
+  coord_flip()
 individual
 ggsave('out/exploration/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
-# Same plot, but x axis is OTUs
-otu_order <- var_host_population %>%
-  group_by(name) %>%
-  summarise(mean_var_log_ratio = mean(var_person/var_population, na.rm = TRUE)) %>%
-  ungroup() %>%
-  arrange(mean_var_log_ratio) %>%
-  pull(name) 
-
-var_host_population$name <- factor(var_host_population$name, levels = otu_order)
-
 otus <- var_host_population %>%
-  #filter(var_population > 0) %>%
-  ggplot(aes(x = name, y = var_person/var_population)) +
+  left_join(taxtab, by = 'name') %>%
+  ggplot(aes(x = fct_rev(name), y = var_person/var_population)) +
   geom_boxplot() +
-  geom_jitter() +
-  #geom_hline(yintercept = 1) +
-  labs(x = 'OTUs', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)', color = 'Individual') +
-  theme(legend.position = 'right', axis.text.x = element_blank())
+  scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
+  labs(x = 'OTUs', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)') +
+  theme(legend.position = 'none', axis.title.x = element_blank()) +
+  coord_flip()
 otus
 ggsave('out/exploration/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
@@ -248,19 +240,15 @@ ggsave('out/exploration/mini_days_person.png', dpi=600)
 
 
 # All plots figure 3
-host_population <- ggarrange(individual + labs(tag = 'B'), otus + rremove("ylab") + labs(tag = 'C'), common.legend = FALSE, legend = 'right', 
-                             widths = c(1,1.5)) 
+host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
+                             otus + labs(tag = 'C'), 
+                             common.legend = FALSE, legend = 'right', widths = c(.8,1))
+
+host_population <- annotate_figure(host_population, bottom = "Individual variance of log(mi/ei) / Population variance of log (mi/ei)")
+
 ggarrange(days + labs(tag = 'A'), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 1))
 ggsave('out/exploration/varhost_varpopulation_all3.png', dpi=600)
-
-
-host_population_A <- ggarrange(individual + labs(tag = 'A'), otus + rremove("ylab") + labs(tag = 'B'), common.legend = FALSE, legend = 'right', 
-          widths = c(1,1.5)) 
-
-ggarrange(host_population_A, days + labs(tag = 'C'), common.legend = FALSE, nrow = 2, 
-          heights = c(1, 1))
-ggsave('out/exploration/varhost_varpopulation_all3_alternative.png', dpi=600)
 
 # Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
 kruskal.test(var_person/var_population ~ person, data = var_host_population)
@@ -341,9 +329,9 @@ ggsave('out/exploration/statistics_variance_days.png', dpi = 600)
 
 
 # Are OTU mi/ni values correlated across days ?
-time_stat = otutabME %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
-  mutate(x = log10(mi/ni)) %>%
+time_stat <- otutabME %>%
+  filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
+  mutate(x = log10(mi/ei)) %>%
   group_by(person, name) %>%
   mutate(mean = mean(x, na.rm = TRUE)) %>%
   ungroup() %>%
@@ -360,15 +348,15 @@ ggsave('out/exploration/heatmap_all.png', width = 20, height = 18, units = 'cm',
 # Is the variation in time we observe driven by typical variance across OTUs in a host? /in a population ? 
 person_mean = otutabME %>%
   group_by(person, name) %>%
-  summarise(mean = mean(log10(mi/ni)), .groups = 'drop') %>%
+  summarise(mean = mean(log10(mi/ei)), .groups = 'drop') %>%
   filter(!is.infinite(mean) & !is.na(mean)) %>%
   group_by(person) %>%
   summarise(var = var(mean), .groups = 'drop') 
 
 otu_time = otutabME %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ni))) %>%
+  filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(person, day) %>%
-  summarise(var_day = var(log10(mi/ni), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
   left_join(person_mean, by = 'person')
 
 ggplot(otu_time, aes(x = day, y = var_day, color = person)) +
@@ -392,7 +380,7 @@ results = data.frame()
 for (p in unique(otutabME$person)) {
   xtab = otutabME %>% 
     filter(person == p) %>%
-    mutate(x = mi/ni) %>%
+    mutate(x = mi/ei) %>%
     select(name, x, original_sample) %>%
     pivot_wider(names_from = 'name', values_from = 'x', values_fill = 0) %>%
     column_to_rownames('original_sample')
