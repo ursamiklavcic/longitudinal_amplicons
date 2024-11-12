@@ -1,83 +1,30 @@
-# For the article 
+# library(readxl)
+# library(ggplot2)
+# library(tidyr)
+# library(dplyr)
+# library(vegan)
+# library(tibble)
+# library(scales)
+# library(phyloseq)
+# library(car) # dependency for ggpubr
+# library(ggpubr)
+# 
+# set.seed(96)
+# theme_set(theme_bw())
+# 
+# otutabEM <- readRDS('data/r_data/otutabEM.RDS')
+# seqtab <- readRDS('data/r_data/seqtab.RDS')
+# metadata <- readRDS('data/r_data/metadata.RDS')
+# taxtab <- readRDS('data/r_data/taxtab.RDS')
+# seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
+# ddPCR <- readRDS('data/r_data/ddPCR.RDS')
+# tree <- readRDS('data/r_data/tree.RDS')
+# 
+# # Colors to be used
+# col_boxplot <- c('#ADD8E6', '#4682B4', '#90EE90', '#3CB371')
+# col_number <- c('#3cd8d8', '#d83c8a')
 
-library(ggplot2)
-library(tidyr)
-library(dplyr)
-library(vegan)
-library(tibble)
-library(scales)
-library(phyloseq)
-library(car) # dependency for ggpubr
-library(ggpubr)
-
-set.seed(96)
-theme_set(theme_bw())
-
-otutabEM <- readRDS('data/r_data/otutabEM.RDS')
-seqtab <- readRDS('data/r_data/seqtab.RDS')
-metadata <- readRDS('data/r_data/metadata.RDS')
-taxtab <- readRDS('data/r_data/taxtab.RDS')
-seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
-ddPCR <- readRDS('data/r_data/ddPCR.RDS')
-tree <- readRDS('data/r_data/tree.RDS')
-
-col_boxplot <- c('#ADD8E6', '#4682B4', '#90EE90', '#3CB371')
-col_number <- c('#3cd8d8', '#d83c8a')
-
-# Prepare data 
-otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
-  pivot_longer(cols = starts_with('Otu')) %>%
-  left_join(metadata %>% select(original_sample, Group, person, date), by = 'Group') %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value / sum(value), 
-         PA = ifelse(value > 0, 1, 0)) %>%
-  ungroup() %>%
-  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-  mutate(norm_abund = rel_abund * copies) %>%
-  select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
-  left_join(taxtab, by = 'name')
-#saveRDS(otu_long, 'data/r_data/otu_long.RDS')
-
-# OTU that is ethanol resistant once is always ethanol resistant 
-etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                       otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
-                       by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  # Define if OTU in a sample of stool is ethanol resistant 
-  # Contition 1: present in both bulk microbiota sample and ethanol resistant fraction
-  # Condition 2: higher relative abudnance in EtOH sample than microbiota
-  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
-  group_by(name) %>%
-          # Calculate the number of times this OTU was present in samples
-  reframe(no_present = sum(PA.x), 
-          # Caluclate how many times OTU was defined as part of EtOH fraction based on Conditions 1 & 2
-          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-  ungroup() %>%
-  # OTUs that have been defined as part Of the ethanol resistant fraction in at least 5% of samples where they were found! 
-  # (to avoid mistakes of protocol and exclude highly abundant OTUs that maybe were seen as ethanol resistant but just didn't get destoryed!)
-  filter(no_Yes > (no_present * 0.05)) %>%
-  #filter(no_Yes > (no_present * 0.1)) %>%
-  #filter(no_Yes > 1) %>%
-  # Extract names! 
-  pull(unique(name))
-#saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
-
-uncertain_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                                         otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
-                                         by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
-  group_by(name) %>%
-  reframe(no_present = sum(PA.x), 
-          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-  ungroup() %>%
-  # Filter OTUs that were detected as EtOH resistant at least once, but were detected as such in less than 5% of samples, to exclude them from the analysis 
-  filter(no_Yes > 1) %>%
-  filter(no_Yes < (no_present * 0.05)) %>%
-  pull(unique(name))
-
-nonetoh_otus <- otu_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
-  filter(!(name %in% uncertain_otus) & !(name %in% etoh_otus)) %>%
-  pull(unique(name))
-
+##  OTU analysis 
 
 # Create the 4 fractions 
 # Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
@@ -289,7 +236,6 @@ ggsave('out/exploration/figure1.png', dpi=600)
 # Are ethanol resistant OTUs more likely to be shared or present in a single individual? 
 # An OTU is present in an individual, if we saw it in at elast 1/3 of the samples (n=4).
 
-
 # Beta diversity 
 # Function to calculate beta distances (Bray-Curtis OR Jaccard) 
 calculate_dist <- function(otu_data, method) {
@@ -348,8 +294,8 @@ bray <- calculate_dist(etoh_bacillota, 'bray') %>%
   rbind(calculate_dist(etoh_other, 'bray')) %>%
   rbind(calculate_dist(non_etoh_other, 'bray'))
 
-bray$fraction <- factor(bray$fraction, levels = c('Other non-ethanol resistant taxa', 'Other ethanol resistant taxa',
-                                                  'Non-ethanol resistant Bacillota', 'Ethanol resistant Bacillota'))
+bray$fraction <- factor(bray$fraction, levels = c('Ethanol resistant Bacillota',  'Non-ethanol resistant Bacillota',
+                                                  'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
 # Kruskal test for Bray-Curtis distances 
 # Within individual 
 bray_within <- filter(bray, same_person == 'Within individual')
@@ -363,20 +309,51 @@ bray_between <- filter(bray, same_person == 'Between individuals')
 kruskal_between <- kruskal.test(median_value ~fraction, data = bray_between)
 wilcox_between <- compare_means(median_value ~ fraction, data = bray_between, p.adjust.method = 'BH',  method = 'wilcox.test')
 
-kruskal_bray <- data.frame(same_person = c('Within individual', 'Between individuals'),
-                           fraction = c('Ethanol resistant Bacillota', 'Ethanol resistant Bacillota'), 
-                           p = c(kruskal_within$p.value, kruskal_between$p.value))
+# kruskal_bray <- data.frame(same_person = c('Within individual', 'Between individuals'),
+#                            fraction = c('Ethanol resistant Bacillota', 'Ethanol resistant Bacillota'), 
+#                            p = c(kruskal_within$p.value, kruskal_between$p.value))
 
 wilcox_bray <- rbind(wilcox_between %>% mutate(same_person = 'Between individuals'), 
                      wilcox_within %>% mutate(same_person = 'Within individual')) %>%
-  filter((group1 == "Ethanol resistant Bacillota" & group2 == "Non-ethanol resistant Bacillota") | 
-           (group1 == "Other ethanol resistant taxa" & group2 == "Other non-ethanol resistant taxa"))
+  distinct(group1, group2, p, p.adj, p.format, same_person)
+
+# Table 
+padjust <- ggplot(wilcox_bray, aes(x = group1, y = group2)) +
+  geom_tile(fill = 'white', alpha = 0) +
+  geom_text(aes(label = p.format), color = "black", size = 3) +
+  labs(x = '', y = '') +
+  scale_x_discrete(labels = function(x) gsub("([^ ]+ [^ ]+) ", "\\1\n", x)) +
+  facet_grid(~same_person) +
+  theme_classic()
 
 
 # Plot 
+fig2 <- ggplot(bray) +
+  geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
+  #geom_text(data = wilcox_bray, mapping = aes(y = .05, x = group2, label = paste('p-value:', p.format)), size = 3, hjust = 'left', vjust = -8) +
+  # geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
+  # geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
+  # geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
+  scale_fill_manual(values = col_boxplot) +
+  scale_x_discrete(labels = function(x) gsub("([^ ]+ [^ ]+) ", "\\1\n", x)) +
+  labs(y='Bray-Curtis distance', x='', fill='') +
+  theme(legend.position = 'none') +
+  facet_grid(~same_person) 
+fig2
+ggsave('out/exploration/bray_boxplot.png', dpi = 600)
+
+ggarrange(fig2, padjust, ncol = 1, heights = c(1, 0.35))
+ggsave('out/exploration/figure2.png', dpi=600)
+
+
+wilcox_bray2 <- wilcox_bray %>% filter(c(group1 == '' & group2 == '') &
+                                         c(group1 == '' & group2 == ''))
 ggplot(bray) +
   geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
-  geom_text(data = wilcox_bray, mapping = aes(y = .05, x = group2, label = paste('p-value:', p.format)), size = 3, hjust = 'left', vjust = -8) +
+  geom_text(data = wilcox_bray2, mapping = aes(y = .05, x = group2, label = paste('p-value:', p.format)), size = 3, hjust = 'left', vjust = -8) +
   geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
   geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
   geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
@@ -384,23 +361,15 @@ ggplot(bray) +
   geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
   geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
   scale_fill_manual(values = col_boxplot) +
+  scale_x_discrete(labels = function(x) gsub("([^ ]+ [^ ]+) ", "\\1\n", x)) +
   labs(y='Bray-Curtis distance', x='', fill='') +
   theme(legend.position = 'none') +
-  facet_grid(~same_person) +
-  coord_flip()
-ggsave('out/exploration/bray_boxplot.png', dpi = 600)
+  facet_grid(~same_person) 
+ggsave('out/exploration/figure2_pvalues.png', dpi=600)
 
-bray$fraction <- factor(bray$fraction, levels = c('Ethanol resistant Bacillota',  'Non-ethanol resistant Bacillota',
-                                                  'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
+
 bray_boxplot <- ggplot(bray) +
   geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
-  geom_text(data = wilcox_bray, mapping = aes(y = .05, x = group1, label = paste('p-value =', p.adj)), size = 3, hjust = 'left') +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
   scale_fill_manual(values = col_boxplot) +
   labs(y='Bray-Curtis distance', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom', axis.ticks.x = element_blank()) +
@@ -426,10 +395,6 @@ time_corr <- function(data) {
   return(corr_table)
 }
 
-# Calculate correaltions between diff (time between samplings) and distance metric
-bray_corr_time <- time_corr(time_bray)
-bray_corr_time
-
 time_bray <- bray %>%
   # Filter different individuals
   filter(same_person == 'Within individual') %>%
@@ -448,6 +413,9 @@ b_time <- time_bray %>%
 b_time
 ggsave('out/exploration/bray_time.png', dpi=600)
 
+# Calculate correaltions between diff (time between samplings) and distance metric
+bray_corr_time <- time_corr(time_bray)
+bray_corr_time
 
 ##
 # Jaccard 
@@ -477,20 +445,19 @@ kruskal_jaccard <- data.frame(same_person = c('Within individual', 'Between indi
 
 wilcox_jaccard <- rbind(wilcox_between %>% mutate(same_person = 'Between individuals'), 
                         wilcox_within %>% mutate(same_person = 'Within individual')) %>%
-  filter((group1 == "Ethanol resistant Bacillota" & group2 == "Non-ethanol resistant Bacillota") | 
-           (group1 == "Other ethanol resistant taxa" & group2 == "Other non-ethanol resistant taxa"))
+  distinct(group1, group2, p, p.adj, p.format, same_person)
 
 
 # Plot 
 jaccard_boxplot <- ggplot(jaccard) +
   geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
-  geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = group1, label = paste('p-value =', p.adj)), size = 3, hjust = 'left') +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = group1, label = paste('p-value =', p.adj)), size = 3, hjust = 'left') +
+  # geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
+  # geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
+  # geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
+  # geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
   scale_fill_manual(values = col_boxplot) +
   labs(y='Jaccard distance', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom', axis.ticks.x = element_blank()) +
@@ -521,60 +488,10 @@ ggsave('out/exploration/time_jaccard.png', dpi=600)
 j_time_corr <- time_corr(time_jaccard)
 j_time_corr
 
-# 
-# Sequences 
-# 
-seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
-  pivot_longer(cols = starts_with('VH')) %>%
-  left_join(metadata %>% select(original_sample, Group, person, date), by = 'Group') %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value / sum(value), 
-         PA = ifelse(value > 0, 1, 0)) %>%
-  ungroup() %>%
-  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-  mutate(norm_abund = rel_abund * copies) %>%
-  select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
-  left_join(rownames_to_column(seq_taxtab, 'name'), by = 'name')
-
-# OTU that is ethanol resistant once is always ethanol resistant 
-etoh_seq <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                      seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
-                      by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  # Define if a sequence in a sample of stool is ethanol resistant 
-  # Contition 1: present in both bulk microbiota sample and ethanol resistant fraction
-  # Condition 2: higher relative abudnance in EtOH sample than microbiota
-  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
-  group_by(name) %>%
-  # Calculate the number of times this OTU was present in samples
-  reframe(no_present = sum(PA.x), 
-          # Caluclate how many times OTU was defined as part of EtOH fraction based on Conditions 1 & 2
-          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-  ungroup() %>%
-  # OTUs that have been defined as part Of the ethanol resistant fraction in at least 10% of samples where they were found! 
-  # (to avoid mistakes of protocol and exclude highly abundant OTUs that maybe were seen as ethanol resistant but just didn't get destoryed!)
-  filter(no_Yes > (no_present * 0.05)) %>%
-  # Extract names! 
-  pull(unique(name))
-
-uncertain_seqs <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
-                            seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
-                            by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
-  group_by(name) %>%
-  reframe(no_present = sum(PA.x), 
-          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-  ungroup() %>%
-  # Filter OTUs that were detected as EtOH resistant at least once, but were detected as such in less than 5% of samples, to exclude them from the analysis 
-  filter(no_Yes > 1) %>%
-  filter(no_Yes < (no_present * 0.05)) %>%
-  pull(unique(name))
-
-nonetoh_seqs <- seq_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
-  filter(!(name %in% uncertain_seqs) & !(name %in% etoh_seq)) %>%
-  pull(unique(name))
-
+ 
+## Sequences 
 # Create the 4 fractions 
-# Ethanol resistant OTUs AND non-ethanol resistant seqs + divide by phylum (Bacillota + other)
+# Ethanol resistant seqs AND non-ethanol resistant seqs + divide by phylum (Bacillota + other)
 
 # At the level of Bacillota 
 etoh_bacillota <- filter(seq_long, substr(Group, 1, 1) == 'M' & name %in% etoh_seq & Phylum == 'Firmicutes') %>%
@@ -656,7 +573,7 @@ unifrac_weighted <- calculate_unifrac(etoh_bacillota, TRUE) %>%
   rbind(calculate_unifrac(non_etoh_other, TRUE))
 
 unifrac_weighted$fraction <- factor(unifrac_weighted$fraction, levels = c('Ethanol resistant Bacillota',  'Non-ethanol resistant Bacillota',
-                                                        'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
+                                                                          'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
 # Kruskal test for Unifrac weighted distances 
 # Within individual 
 unifrac_weighted_within <- filter(unifrac_weighted, same_person == 'Within individual')
@@ -671,25 +588,17 @@ kruskal_between <- kruskal.test(median_value ~fraction, data = unifrac_weighted_
 wilcox_between <- compare_means(median_value ~ fraction, data = unifrac_weighted_between, p.adjust.method = 'BH',  method = 'wilcox.test')
 
 kruskal_unifrac_weighted <- data.frame(same_person = c('Within individual', 'Between individuals'),
-                              fraction = c('Ethanol resistant Bacillota', 'Ethanol resistant Bacillota'), 
-                              p = c(kruskal_within$p.value, kruskal_between$p.value))
+                                       fraction = c('Ethanol resistant Bacillota', 'Ethanol resistant Bacillota'), 
+                                       p = c(kruskal_within$p.value, kruskal_between$p.value))
 
 wilcox_unifrac_weighted <- rbind(wilcox_between %>% mutate(same_person = 'Between individuals'), 
-                        wilcox_within %>% mutate(same_person = 'Within individual')) %>%
-  filter((group1 == "Ethanol resistant Bacillota" & group2 == "Non-ethanol resistant Bacillota") | 
-           (group1 == "Other ethanol resistant taxa" & group2 == "Other non-ethanol resistant taxa"))
+                                 wilcox_within %>% mutate(same_person = 'Within individual')) %>%
+  distinct(group1, group2, p, p.adj, p.format, same_person)
 
 
 # Plot 
 unifrac_weighted_boxplot <- ggplot(unifrac_weighted) +
   geom_boxplot(mapping = aes(x=fraction, y=median_value, fill=fraction)) +
-  geom_text(data = wilcox_jaccard, mapping = aes(y = .88, x = group1, label = paste('p-value =', p.adj)), size = 3, hjust = 'left') +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .9, xend = 'Non-ethanol resistant Bacillota', yend = .9), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .9, xend = 'Other non-ethanol resistant taxa', yend = .9), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .9, xend = 'Ethanol resistant Bacillota', yend = .895), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .9, xend = 'Non-ethanol resistant Bacillota', yend = .895), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other ethanol resistant taxa', y = .9, xend = 'Other ethanol resistant taxa', yend = .895), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .9, xend = 'Other non-ethanol resistant taxa', yend = .895), linetype = "solid", linewidth = .4) +
   scale_fill_manual(values = col_boxplot) +
   labs(y='weighted UniFrac distance', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom', axis.ticks.x = element_blank()) +
@@ -726,7 +635,7 @@ unifrac_unweighted <- calculate_unifrac(etoh_bacillota, FALSE) %>%
   rbind(calculate_unifrac(non_etoh_other, FALSE))
 
 unifrac_unweighted$fraction <- factor(unifrac_unweighted$fraction, levels = c('Ethanol resistant Bacillota',  'Non-ethanol resistant Bacillota',
-                                                        'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
+                                                                              'Other ethanol resistant taxa', 'Other non-ethanol resistant taxa'))
 # Kruskal test for Unifrac weighted distances 
 # Within individual 
 unifrac_unweighted_within <- filter(unifrac_unweighted, same_person == 'Within individual')
@@ -741,25 +650,17 @@ kruskal_between <- kruskal.test(mean_value ~fraction, data = unifrac_unweighted_
 wilcox_between <- compare_means(mean_value ~ fraction, data = unifrac_unweighted_between, p.adjust.method = 'BH',  method = 'wilcox.test')
 
 kruskal_unifrac_unweighted <- data.frame(same_person = c('Within individual', 'Between individuals'),
-                              fraction = c('Ethanol resistant Bacillota', 'Ethanol resistant Bacillota'), 
-                              p = c(kruskal_within$p.value, kruskal_between$p.value))
+                                         fraction = c('Ethanol resistant Bacillota', 'Ethanol resistant Bacillota'), 
+                                         p = c(kruskal_within$p.value, kruskal_between$p.value))
 
 wilcox_unifrac_unweighted <- rbind(wilcox_between %>% mutate(same_person = 'Between individuals'), 
-                        wilcox_within %>% mutate(same_person = 'Within individual')) %>%
-  filter((group1 == "Ethanol resistant Bacillota" & group2 == "Non-ethanol resistant Bacillota") | 
-           (group1 == "Other ethanol resistant taxa" & group2 == "Other non-ethanol resistant taxa"))
+                                   wilcox_within %>% mutate(same_person = 'Within individual')) %>%
+  distinct(group1, group2, p, p.adj, p.format, same_person)
 
 
 # Plot 
 unifrac_unweighted_boxplot <- ggplot(unifrac_unweighted) +
   geom_boxplot(mapping = aes(x=fraction, y=mean_value, fill=fraction)) +
-  geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = group1, label = paste('p-value =', p.adj)), size = 3, hjust = 'left') +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .005), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .005), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Ethanol resistant Bacillota', y = .005, xend = 'Ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(mapping = aes(x = 'Non-ethanol resistant Bacillota', y = .005, xend = 'Non-ethanol resistant Bacillota', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other ethanol resistant taxa', y = .005, xend = 'Other ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
-  geom_segment(aes(x = 'Other non-ethanol resistant taxa', y = .005, xend = 'Other non-ethanol resistant taxa', yend = .01), linetype = "solid", linewidth = .4) +
   scale_fill_manual(values = col_boxplot) +
   labs(y='unweighted UniFrac distance', x='', fill='') +
   theme(axis.text.x = element_blank(), legend.position = 'bottom', axis.ticks.x = element_blank()) +
@@ -788,6 +689,7 @@ uu_time
 ggsave('out/exploration/time_unifrac_unweighted.png', dpi=600)
 
 uu_time_corr <- time_corr(time_unifrac_unweighted)
+uu_time_corr
 
 ## Supplement plots 
 ggarrange(bray_boxplot + labs(tag = 'A'), jaccard_boxplot + labs(tag = 'B'),
@@ -800,63 +702,5 @@ ggarrange(b_time + labs(tag = 'A'), j_time + labs(tag = 'B'),
           nrow = 2, ncol = 2, common.legend = TRUE, legend = 'bottom')
 ggsave('out/exploration/supplement_figure2.png', dpi=600)
 
-##
-ggarrange(bray_boxplot + labs(tag = 'A'), otus_fraction_shared + labs(tag = 'B'), 
-          ncol = 1, heights = c(1, 0.7))
-ggsave('out/exploration/figure1_alt.png', dpi=600)
 
 
-
-## Suppelemnt PowerFecal
-library(readxl)
-
-read.quantasoft = function(file) {
-  # Read the lines
-  lines = readLines(file)
-  # Extract header 
-  header = strsplit(lines[1], ',')[[1]]
-  # Spilt by , 
-  data_lines = sapply(lines[-1], function(line) strsplit(substr(line, 2, nchar(line)), ",")[[1]])
-  # turn into data.frame and add header and remove row.names
-  data_df = as.data.frame(t(data_lines), stringsAsFactors = FALSE)
-  names(data_df) = header
-  rownames(data_df) = NULL
-  # Select only the info I need, remove " from names of well and samples
-  data_df_fin = data_df %>% select(Well, Sample, Concentration, CopiesPer20uLWell, Positives, Negatives, AcceptedDroplets) %>%
-    filter(Concentration != 'No Call') %>%
-    transform(Concentration = as.numeric(Concentration), 
-              CopiesPer20uLWell = as.numeric(CopiesPer20uLWell), 
-              Positives = as.numeric(Positives),
-              Negatives = as.numeric(Negatives),
-              AcceptedDroplets = as.numeric(AcceptedDroplets)) %>%
-    mutate(across(c(Well, Sample), ~gsub('"', '', .)))
-  
-}
-
-# Additional experiment: Does PowerFecal kit isolate spores?
-samples = read_excel('data/absolute_quantification/PowerFecal/samples.xlsx')
-
-pf = read.quantasoft('data/absolute_quantification/PowerFecal/ddpcr_cdiff_20240808_RESULTS.csv') %>%
-  right_join(samples, by = 'Sample') %>%
-  mutate(abs_conc = Concentration * (25/2.5) * (25/20) * 1000) 
-
-pf$sample_description = factor(pf$sample_description, levels = c('negative control (H2O)', 'negative control (E. coli)','fecal sample', 'fecal sample + 10e-4 spores', 'fecal sample + 10e-3 spores', 
-                                                                 'fecal sample + 10e-1 spores', 'fecal sample with undiluted spores','positive control (C.diff)'))
-
-# Present only the ones important for correlation! 
-pf_cor <- filter(pf, sample_description %in% c('fecal sample + 10e-4 spores', 'fecal sample + 10e-3 spores', 
-                                               'fecal sample + 10e-1 spores', 'fecal sample with undiluted spores'))
-cor_pf <- cor.test(pf_cor$Concentration, pf_cor$sporeCFU, method = 'pearson')
-
-pf_cor %>%
-  ggplot(aes(x = sporeCFU, y = abs_conc, color = sample_description )) +
-  geom_point(size = 3) +
-  geom_abline() +
-  annotate('text', x= 1e7, y = 1e9, 
-           label = paste("Pearson's correlation:", round(cor_pf$estimate, digits =2), '\n', 
-                         'p-value =', round(cor_pf$p.value, digits = 3))) +
-  scale_x_continuous(trans = log_trans(), breaks = c(0, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11)) +
-  scale_y_continuous(trans = log_trans(), breaks = c(0, 1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10)) +
-  labs(x = expression(italic("C. difficile") * " spores CFU/ml"), 
-       y = expression("Copies of " * italic("C. difficile") * " 16S rRNA/ml"), color = 'Sample')
-ggsave('out/exploration/PowerFecal_spores.png', dpi = 600)
