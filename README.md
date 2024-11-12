@@ -2,7 +2,7 @@ Exploratory analysis of longitudinal amplicon data from 9 healthy individuals gu
 
 ## In the folder article_title you can find all necessary data and code to reproduce all of it:
 
-# Article_title
+# Longitudinal dynamics of endospores and other ethanol resistant Bacillota in the human gut
 #### _author1_, _..._, _.._
 
 ## Abstract

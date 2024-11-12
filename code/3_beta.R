@@ -683,7 +683,7 @@ unifrac_w <- dist_w %>%
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-unifrac_w$fraction.y = factor(unifrac_w$fraction.y, levels = levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
+unifrac_w$fraction.y = factor(unifrac_w$fraction.y, levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
                                                                         'Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
 # Betadisper
@@ -780,7 +780,7 @@ unifrac_u <- dist_u %>%
          same_fraction = ifelse(fraction.x == fraction.y, 'Yes', 'No')) %>%
   filter(same_fraction == 'Yes')
 
-unifrac_u$fraction.y = factor(unifrac_u$fraction.y, levels = levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
+unifrac_u$fraction.y = factor(unifrac_u$fraction.y, levels = c('Ethanol resistant OTUs', 'Non-ethanol resistant OTUs', 
                                                                         'Ethanol resistant Bacillota', 'Non-ethanol resistant Bacillota'))
 
 # ANOSIM 

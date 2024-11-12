@@ -1,22 +1,18 @@
 #Load environemnt
-#renv::init()
-#renv::snapshot()
-
 renv::restore()
 
 # # Load libraries
-library(renv)
-library(readxl)
-library(ggplot2)
-library(tidyr)
-library(dplyr)
-library(vegan)
-library(tibble)
-library(scales)
-library(phyloseq)
-library(car) # dependency for ggpubr
-library(ggpubr)
-
+# library(renv)
+# library(readxl)
+# library(ggplot2)
+# library(tidyr)
+# library(dplyr)
+# library(vegan)
+# library(tibble)
+# library(scales)
+# library(phyloseq)
+# library(car) # dependency for ggpubr
+# library(ggpubr)
 
 set.seed(96)
 theme_set(theme_bw())
@@ -30,9 +26,6 @@ seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
 tree <- readRDS('data/r_data/tree.RDS')
 
 otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
-
-set.seed(96)
-theme_set(theme_bw())
 
 # Colors to be used
 col_boxplot <- c('#ADD8E6', '#4682B4', '#90EE90', '#3CB371')

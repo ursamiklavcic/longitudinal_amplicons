@@ -1,4 +1,4 @@
-library(readxl)
+# library load
 library(ggplot2)
 library(tidyr)
 library(dplyr)
@@ -8,10 +8,10 @@ library(scales)
 library(phyloseq)
 library(car) # dependency for ggpubr
 library(ggpubr)
-# 
+
 set.seed(96)
 theme_set(theme_bw())
-# 
+
 otutabEM <- readRDS('data/r_data/otutabEM.RDS')
 seqtab <- readRDS('data/r_data/seqtab.RDS')
 metadata <- readRDS('data/r_data/metadata.RDS')
@@ -124,7 +124,7 @@ otu_present_individual %>%
   theme(legend.position = 'bottom') +
   labs(caption = paste('p-value =', scientific(res_fisher$p.value, digits = 2), 
                        '\n', 'odds =', round(res_fisher$estimate, digits = 2)))
-ggsave('out/exploration/shared_ethn_or_not.png', dpi= 600)
+ggsave('out/shared_ethn_or_not.png', dpi= 600)
 
 # How many OTUs are present in a single person/shared for each fraction
 core_fraction <- otu_present_individual %>%
@@ -154,7 +154,7 @@ otus_fraction_shared <- core_fraction %>%
   labs(x = '% OTUs', y = '', fill = '') +
   labs(caption = paste('p-value =', scientific(chi_test$p.value, digits = 2)))
 otus_fraction_shared
-ggsave('out/exploration/shared_single_fractions_uncertain_removed.png', dpi=600)
+ggsave('out/shared_single_fractions_uncertain_removed.png', dpi=600)
 
 # Figure 1 
 # What percentage of relative abundance are OTUs that are ethanol resistant ? 
@@ -206,7 +206,7 @@ number <- otutab_plots %>%
   guides(fill = guide_legend(ncol = 4))
 
 number
-ggsave('out/exploration/figure1_number_v2.png', dpi = 600)
+ggsave('out/figure1_number_v2.png', dpi = 600)
 
 # Separated by all fractions
 otutab_plots %>%
@@ -226,12 +226,12 @@ otutab_plots %>%
   theme(legend.position = 'bottom', 
         plot.margin = unit(c(0.1, 0.2, 0.2, 0.1), "cm")) + 
   guides(fill = guide_legend(ncol = 4))
-ggsave('out/exploration/figure1_number.png', dpi = 600)
+ggsave('out/figure1_number.png', dpi = 600)
 
 ggarrange(number + labs(tag = 'A'),
           relative + labs(tag = 'B'), 
           nrow = 2, common.legend = TRUE, legend = 'bottom', align = 'v', heights = c(0.8, 1))
-ggsave('out/exploration/figure1.png', dpi=600)
+ggsave('out/figure1.png', dpi=600)
 
 # Are ethanol resistant OTUs more likely to be shared or present in a single individual? 
 # An OTU is present in an individual, if we saw it in at elast 1/3 of the samples (n=4).
@@ -343,10 +343,10 @@ fig2 <- ggplot(bray) +
   theme(legend.position = 'none') +
   facet_grid(~same_person) 
 fig2
-ggsave('out/exploration/bray_boxplot.png', dpi = 600)
+ggsave('out/bray_boxplot.png', dpi = 600)
 
 ggarrange(fig2, padjust, ncol = 1, heights = c(1, 0.35))
-ggsave('out/exploration/figure2.png', dpi=600)
+ggsave('out/figure2.png', dpi=600)
 
 
 wilcox_bray2 <- wilcox_bray %>% filter(c(group1 == '' & group2 == '') &
@@ -365,7 +365,7 @@ ggplot(bray) +
   labs(y='Bray-Curtis distance', x='', fill='') +
   theme(legend.position = 'none') +
   facet_grid(~same_person) 
-ggsave('out/exploration/figure2_pvalues.png', dpi=600)
+ggsave('out/figure2_pvalues.png', dpi=600)
 
 
 bray_boxplot <- ggplot(bray) +
@@ -411,7 +411,7 @@ b_time <- time_bray %>%
   labs(x='Days between sampling', y='Median Bray-Curtis distance', color='') +
   theme(legend.position = 'bottom') 
 b_time
-ggsave('out/exploration/bray_time.png', dpi=600)
+ggsave('out/bray_time.png', dpi=600)
 
 # Calculate correaltions between diff (time between samplings) and distance metric
 bray_corr_time <- time_corr(time_bray)
@@ -464,7 +464,7 @@ jaccard_boxplot <- ggplot(jaccard) +
   guides(fill = guide_legend(ncol = 4)) +
   facet_grid(~same_person) 
 jaccard_boxplot
-ggsave('out/exploration/jaccard_boxplot.png', dpi = 600)
+ggsave('out/jaccard_boxplot.png', dpi = 600)
 
 time_jaccard <- jaccard %>%
   # Filter different individuals
@@ -483,7 +483,7 @@ j_time <- time_jaccard %>%
   theme(legend.position = 'bottom') +
   guides(fill = guide_legend(ncol = 2))
 j_time
-ggsave('out/exploration/time_jaccard.png', dpi=600)
+ggsave('out/time_jaccard.png', dpi=600)
 
 j_time_corr <- time_corr(time_jaccard)
 j_time_corr
@@ -605,7 +605,7 @@ unifrac_weighted_boxplot <- ggplot(unifrac_weighted) +
   guides(fill = guide_legend(ncol = 4)) +
   facet_grid(~same_person) 
 unifrac_weighted_boxplot
-ggsave('out/exploration/unifrac_weighted_boxplot.png', dpi = 600)
+ggsave('out/unifrac_weighted_boxplot.png', dpi = 600)
 
 time_unifrac_weighted <- unifrac_weighted %>%
   # Filter different individuals
@@ -624,7 +624,7 @@ uw_time <- time_unifrac_weighted %>%
   theme(legend.position = 'bottom') +
   guides(fill = guide_legend(ncol = 2))
 uw_time
-ggsave('out/exploration/time_unifrac_weighted.png', dpi=600)
+ggsave('out/time_unifrac_weighted.png', dpi=600)
 
 uw_time_corr <- time_corr(time_unifrac_weighted)
 
@@ -667,7 +667,7 @@ unifrac_unweighted_boxplot <- ggplot(unifrac_unweighted) +
   guides(fill = guide_legend(ncol = 4)) +
   facet_grid(~same_person) 
 unifrac_unweighted_boxplot
-ggsave('out/exploration/unifrac_unweighted_boxplot.png', dpi = 600)
+ggsave('out/unifrac_unweighted_boxplot.png', dpi = 600)
 
 time_unifrac_unweighted <- unifrac_unweighted %>%
   # Filter different individuals
@@ -686,7 +686,7 @@ uu_time <- time_unifrac_unweighted %>%
   theme(legend.position = 'bottom') +
   guides(fill = guide_legend(ncol = 2))
 uu_time
-ggsave('out/exploration/time_unifrac_unweighted.png', dpi=600)
+ggsave('out/time_unifrac_unweighted.png', dpi=600)
 
 uu_time_corr <- time_corr(time_unifrac_unweighted)
 uu_time_corr
@@ -695,12 +695,12 @@ uu_time_corr
 ggarrange(bray_boxplot + labs(tag = 'A'), jaccard_boxplot + labs(tag = 'B'),
           unifrac_weighted_boxplot + labs(tag = 'C'), unifrac_unweighted_boxplot + labs(tag = 'D'),
           nrow = 2, ncol = 2, common.legend = TRUE, legend = 'bottom')
-ggsave('out/exploration/supplement_figure3.png', dpi=600)
+ggsave('out/supplement_figure1.png', dpi=600)
 
 ggarrange(b_time + labs(tag = 'A'), j_time + labs(tag = 'B'), 
           uw_time + labs(tag = 'C'), uu_time + labs(tag = 'D'), 
           nrow = 2, ncol = 2, common.legend = TRUE, legend = 'bottom')
-ggsave('out/exploration/supplement_figure2.png', dpi=600)
+ggsave('out/supplement_figure2.png', dpi=600)
 
 
 
