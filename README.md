@@ -23,10 +23,11 @@ git pull https://github.com/ursamiklavcic/longitudinal_amplicons/article_title
 Open RStudio or start R in command line
 
 Run code to obtain dependencies and load data:
-(to see how the data was obtained load pre_load.R)
+
 ```R
 /code/load.R
-/code/pre_load.R
+# To se how we got to the data used load pre_load.R
+# /code/pre_load.R
 ```
 
 ## Packages()
