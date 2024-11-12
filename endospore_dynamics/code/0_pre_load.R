@@ -14,6 +14,8 @@ library(readxl)
 
 set.seed(96)
 
+# Files for this are to big to upload to github, please request them ursa.miklavcic@nlzoh.si
+
 # function to read in Quantasoft results
 read.quantasoft = function(file) {
   # Read the lines
