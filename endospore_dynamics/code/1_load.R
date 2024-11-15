@@ -68,6 +68,8 @@ etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'),
   pull(unique(name))
 #saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
 
+length(unique(etoh_otus))
+
 uncertain_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
                             otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
                             by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
@@ -80,10 +82,13 @@ uncertain_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'),
   filter(no_Yes > 1) %>%
   filter(no_Yes < (no_present * 0.05)) %>%
   pull(unique(name))
+length(unique(uncertain_otus))
 
 nonetoh_otus <- otu_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
   filter(!(name %in% uncertain_otus) & !(name %in% etoh_otus)) %>%
   pull(unique(name))
+length(unique(nonetoh_otus))
+
 
 # The same but for sequences 
 seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
@@ -134,3 +139,31 @@ uncertain_seqs <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'),
 nonetoh_seqs <- seq_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
   filter(!(name %in% uncertain_seqs) & !(name %in% etoh_seq)) %>%
   pull(unique(name))
+
+
+# How many, where ? 
+# Composition of ethanol resistant samples and bulk microbiota samples in numbers
+# Number of unique OTUs detected in this study 
+otu_long %>%
+  filter(PA == 1) %>%
+  summarise(no_otus = n_distinct(name))
+# we found 2574 OTUs in both types of samples 
+
+otu_long %>%
+  filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
+  summarise(no_otus = n_distinct(name))
+# In bulk microbiota samples only 2433!; 141 OTus were found only in ethanol resistant samples! 
+
+otu_long %>%
+  filter(substr(Group, 1, 1) == 'S' & PA == 1) %>%
+  summarise(no_otus = n_distinct(name))
+# in ethnanol resistant samples we found 1864 unique OTUs. 
+
+# Number of OTUs detected in both microbiota and ethanol resistant fraction
+otu_long_both <- otu_long %>% filter(substr(Group, 1, 1) == 'M') %>%
+  full_join(filter(otu_long, substr(Group, 1, 1) == 'S'), by = join_by('name', 'person', 'date', 'original_sample', 'Domain', 'Phylum', 'Class', 'Family', 'Order', 'Genus')) 
+
+otu_long_both %>%
+  filter(PA.x == 1 & PA.y == 1) %>%
+  summarize(no_otus = n_distinct(name)) 
+# In both samples we detected 1475 unique OTUs
