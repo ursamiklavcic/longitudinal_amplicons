@@ -4,6 +4,9 @@ library(tibble)
 library(ggplot2)
 library(ggpubr)
 library(forcats)
+library(ggtext)
+library(scales)
+library(stringr)
 
 set.seed(96)
 theme_set(theme_bw())
@@ -41,7 +44,7 @@ for (i in unique(otutab_norm$person)) {
   res <- cor.test(otutab_filt$rel_abund.x, otutab_filt$rel_abund.y, method = 'pearson')
   
   # Append the correlation and p-value results to cor_results
-  results <- rbind(cor_results, data.frame(person = i,  # Add person ID for clarity
+  results <- rbind(results, data.frame(person = i,  # Add person ID for clarity
                                                corr = res$estimate,
                                                pvalue = res$p.value))
 }
@@ -53,7 +56,7 @@ otutab_norm %>%
   ggplot(aes(x = rel_abund.x, y = rel_abund.y)) +
   geom_point() +
   geom_abline() +
-  geom_text(data = cor_results, aes(x = 1e-4, y = 1, label = paste('p-value =', scientific(pvalue, digits = 2)))) +
+  geom_text(data = results, aes(x = 1e-4, y = 1, label = paste('p-value =', scientific(pvalue, digits = 2)))) +
   scale_y_log10() +
   scale_x_log10() +
   facet_wrap(~person, ncol = 3) +
@@ -174,18 +177,23 @@ var_host_population$person <- factor(var_host_population$person, levels = person
 individual <- ggplot(var_host_population, aes(x = fct_rev(person), y = var_person/var_population)) +
   geom_boxplot() +
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
-  #geom_hline(yintercept = 1) +
+  geom_hline(yintercept = 1) +
   labs(x = 'Individuals', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)', color = '') +
   coord_flip()
 individual
 ggsave('out/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
-otus <- var_host_population %>%
+var_host_population_otus <- var_host_population %>%
   left_join(taxtab, by = 'name') %>%
-  ggplot(aes(x = fct_rev(name), y = var_person/var_population)) +
+  mutate(genus2 = paste(str_replace_all(Genus, "_", " "), '(', name, ')'))
+
+otus <-  var_host_population_otus %>%
+  ggplot(aes(x = fct_rev(genus2), y = var_person/var_population)) +
   geom_boxplot() +
-  scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
-  labs(x = 'OTUs', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)') +
+  geom_hline(yintercept = 1) +
+  theme(axis.text.x = element_markdown()) +
+  #scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
+  labs(x = '', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)') +
   theme(legend.position = 'none', axis.title.x = element_blank()) +
   coord_flip()
 otus
@@ -242,7 +250,7 @@ ggsave('out/mini_days_person.png', dpi=600)
 # All plots figure 3
 host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
                              otus + labs(tag = 'C'), 
-                             common.legend = FALSE, legend = 'right', widths = c(.8,1))
+                             common.legend = FALSE, legend = 'right', widths = c(.7,1))
 
 host_population <- annotate_figure(host_population, bottom = "Individual variance of log(mi/ei) / Population variance of log (mi/ei)")
 
