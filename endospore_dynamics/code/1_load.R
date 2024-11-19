@@ -1,5 +1,6 @@
 #Load environemnt
 renv::restore()
+# renv::snapshot()
 
 # # Load libraries
 # library(renv)

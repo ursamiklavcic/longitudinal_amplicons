@@ -615,14 +615,14 @@ unifrac_unweighted_boxplot <- ggplot(unifrac_unweighted) +
   facet_grid(~same_person) 
 unifrac_unweighted_boxplot
 
-uw_time <- time_unifrac_unweighted %>%
+uu_time <- time_unifrac_unweighted %>%
   ggplot(aes(x = date_dist, y = median, color = is_ethanol_resistant)) +
   geom_point() +
   geom_smooth(method = 'lm', se = TRUE, alpha = .2, mapping = aes(linetype = taxonomy, color = is_ethanol_resistant)) +
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'unweighted UniFrac distance', color = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom')
-uw_time
+uu_time
 
 ## Supplement plots 
 ggarrange(bray_boxplot + labs(tag = 'A'), jaccard_boxplot + labs(tag = 'B'),
