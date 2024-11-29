@@ -194,7 +194,7 @@ otus <-  var_host_population_otus %>%
   theme(axis.text.x = element_markdown()) +
   #scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
   labs(x = '', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)') +
-  theme(legend.position = 'none', axis.title.x = element_blank()) +
+  theme(legend.position = 'none') +
   coord_flip()
 otus
 ggsave('out/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
@@ -249,7 +249,7 @@ ggsave('out/mini_days_person.png', dpi=600)
 
 # All plots figure 3
 host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
-                             otus + labs(tag = 'C'), 
+                             otus + labs(tag = 'C') + theme(axis.title.x = element_blank()), 
                              common.legend = FALSE, legend = 'right', widths = c(.7,1))
 
 host_population <- annotate_figure(host_population, bottom = "Individual variance of log(mi/ei) / Population variance of log (mi/ei)")

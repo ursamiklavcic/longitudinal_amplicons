@@ -213,6 +213,29 @@ ggarrange(number + labs(tag = 'A'),
           nrow = 2, common.legend = TRUE, legend = 'bottom', align = 'v', heights = c(0.8, 1))
 ggsave('out/figure1.png', dpi=600)
 
+# Alternative figure 1 
+abundance <- otutab_plots %>%
+  group_by(is_ethanol_resistant) %>%
+  mutate(rel_abund2 = rel_abund / sum(rel_abund)) %>%
+  ungroup()
+
+ap1 <- ggplot() +
+  geom_col(abundance, mapping = aes(x = is_ethanol_resistant, y = rel_abund2, fill = phylum)) +
+  labs(x = '', y = 'Relative abundance', fill = '')
+
+numbers <-  otutab_plots %>%
+  group_by(is_ethanol_resistant, phylum) %>%
+  summarise(number = n_distinct(name)) %>%
+  ungroup()
+
+ap2 <- ggplot() +
+  geom_col(numbers, mapping = aes(x = is_ethanol_resistant, y = number, fill = phylum)) +
+  labs(x = '', y = 'Number of OTUs', fill = '')
+
+ggarrange(ap1, ap2, 
+          common.legend = TRUE, legend = 'bottom')
+ggsave('endospore_dynamics/out/alternative_fig1.png', dpi = 600)
+
 # Are ethanol resistant OTUs more likely to be shared or present in a single individual? 
 # An OTU is present in an individual, if we saw it in at elast 1/3 of the samples (n=4).
 
@@ -343,7 +366,7 @@ bray_corr_time
 
 bray_boxplot <- ggplot(bray) +
   geom_boxplot(mapping = aes(x = taxonomy, y = median_value, fill = is_ethanol_resistant)) +
-  geom_line(mapping = aes(x = .25, y = .25, linetype = taxonomy)) +
+  #geom_line(mapping = aes(x = .25, y = .25, linetype = taxonomy)) +
   geom_text(data = wilcox_bray, mapping = aes(y = .05, x = taxonomy, label = paste('p =', scientific(pvalue, digits = 0)))) + 
   scale_fill_manual(values = col) +
   labs(y = 'Bray-Curtis distance', x = '', fill = '', linetype = 'Phylum') +
@@ -358,12 +381,7 @@ b_time <- time_bray %>%
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Bray-Curtis distance', color = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom')
-
-# Combine plots with a shared legend
-ggarrange(bray_boxplot + labs(tag = 'A'), 
-          b_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
-
-ggsave('figure2.png', dpi = 600)
+b_time
 
 ##
 # Jaccard 
@@ -409,7 +427,7 @@ jaccard_corr_time
 
 jaccard_boxplot <- ggplot(jaccard) +
   geom_boxplot(mapping = aes(x = taxonomy, y = median_value, fill = is_ethanol_resistant)) +
-  geom_line(mapping = aes(x = .25, y = .25, linetype = taxonomy)) +
+  #geom_line(mapping = aes(x = .25, y = .25, linetype = taxonomy)) +
   geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = taxonomy, label = paste('p =', scientific(pvalue, digits = 0)))) + 
   scale_fill_manual(values = col) +
   labs(y = 'Jaccard distance', x = '', fill = '', linetype = 'Phylum') +
@@ -424,6 +442,12 @@ j_time <- time_jaccard %>%
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Jaccard distance', color = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom')
+
+# Combine plots with a shared legend
+ggarrange(bray_boxplot + labs(tag = 'A'), 
+          j_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
+
+ggsave('figure2.png', dpi = 600)
 
 ## Sequences 
 # Create the 4 fractions 
@@ -626,14 +650,26 @@ uu_time
 
 ## Supplement plots 
 ggarrange(bray_boxplot + labs(tag = 'A'), jaccard_boxplot + labs(tag = 'B'),
-          unifrac_weighted_boxplot + labs(tag = 'C'), unifrac_unweighted_boxplot + labs(tag = 'D'),
-          nrow = 2, ncol = 2, common.legend = TRUE, legend = 'bottom')
+          nrow = 1, ncol = 2, common.legend = TRUE, legend = 'bottom')
 ggsave('out/supplement_figure1.png', dpi=600)
 
+
 ggarrange(b_time + labs(tag = 'A'), j_time + labs(tag = 'B'), 
-          uw_time + labs(tag = 'C'), uu_time + labs(tag = 'D'), 
-          nrow = 2, ncol = 2, common.legend = TRUE, legend = 'bottom')
+          ncol = 2, common.legend = TRUE, legend = 'bottom')
 ggsave('out/supplement_figure2.png', dpi=600)
 
 
+# Additional test for usage of beta diveristy metrics: Is the difference we see between ethanol resistant and ethanol non-resistant only, 
+# becouse of different relative abundances of OTUs (Bacillota have higher relative abundance)
 
+sf <- long_all %>%
+  group_by(name) %>%
+  reframe(mean_rel_abund =  mean(rel_abund), 
+            sumsq_diff_abund = sum((outer(rel_abund, rel_abund, `-`)^2)[lower.tri(outer(rel_abund, rel_abund))])) %>%
+  left_join(select(long_all, name, fraction, is_ethanol_resistant), by = 'name')
+
+ggplot(sf, aes(x = log10(mean_rel_abund), y = log10(sumsq_diff_abund), color = is_ethanol_resistant)) +
+  geom_point() +
+  scale_color_manual(values = col) +
+  labs(x = 'Mean relative abundance of OTU', y = 'Sum of squared differences between realtive abudnances of an OTU in different samples', color = '')
+ggsave('endospore_dynamics/out/supplement_figure8.png', dpi = 600)

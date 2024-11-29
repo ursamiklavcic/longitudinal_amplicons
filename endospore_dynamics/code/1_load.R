@@ -2,18 +2,18 @@
 renv::restore()
 # renv::snapshot()
 
-# # Load libraries
-# library(renv)
-# library(readxl)
-# library(ggplot2)
-# library(tidyr)
-# library(dplyr)
-# library(vegan)
-# library(tibble)
-# library(scales)
-# library(phyloseq)
-# library(car) # dependency for ggpubr
-# library(ggpubr)
+# Load libraries
+library(renv)
+library(readxl)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(vegan)
+library(tibble)
+library(scales)
+library(phyloseq)
+library(car) # dependency for ggpubr
+library(ggpubr)
 
 set.seed(96)
 theme_set(theme_bw())
@@ -25,12 +25,9 @@ taxtab <- readRDS('data/r_data/taxtab.RDS')
 seqtab <- readRDS('data/r_data/seqtab.RDS')
 seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
 tree <- readRDS('data/r_data/tree.RDS')
+ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
 otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
-
-# Colors to be used
-col_boxplot <- c('#ADD8E6', '#4682B4', '#90EE90', '#3CB371')
-col_number <- c('#3cd8d8', '#d83c8a')
 
 # Define ethanol resistant OTUs and seqs! 
 otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
