@@ -345,6 +345,7 @@ ggsave('out/exploration/norare_rare_relabund_normal_beatdiveristy.png', dpi=600)
 # Transform otutab into shape for vegan::rarecurve 
 otutab = shared %>% 
   pivot_wider(names_from = 'name', values_from = 'value') %>%
+  filter(substr(Group, 1, 1) == 'M') %>%
   column_to_rownames('Group')
 # Calculate rarefaction curve 
 rarecurve(otutab, step = 1000, xlab= 'Sample Size', ylab='OTUs')
@@ -381,7 +382,7 @@ otuM = otutab %>%
   pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu')) %>%
   group_by(name) %>%
   summarise(otu_value=sum(value)) %>%
-  mutate(biota= 'Microbiota')
+  mutate(biota= 'Bulk microbiota sample')
 
 otuS = otutab %>%
   rownames_to_column('Group') %>%
@@ -390,11 +391,4 @@ otuS = otutab %>%
   pivot_longer(names_to = 'name', values_to = 'value', cols=starts_with('Otu')) %>%
   group_by(name) %>%
   summarise(otu_value=sum(value)) %>%
-  mutate(biota= 'Ethanol resistant fraction')
-
-
-otus =rbind(otuM, otuS) %>%
-  pivot_wider(names_from = 'name', values_from = 'otu_value') %>%
-  column_to_rownames('biota')
-
-rarecurve(otus, step=100)
+  mutate(biota= 'Ethanol treated sample')
