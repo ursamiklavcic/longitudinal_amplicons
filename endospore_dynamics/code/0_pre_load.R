@@ -217,3 +217,39 @@ rm(min_seqs)
 rm(min_seqs_per_otu)
 rm(otu_names)
 rm(reads_per_sample)
+
+# Supplement Figure 1 
+# The effectivness of ethanol and EMA treatment on stool samples 
+otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
+  pivot_longer(cols = starts_with('Otu')) %>%
+  left_join(metadata %>% select(original_sample, Group, person, date), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value), 
+         PA = ifelse(value > 0, 1, 0)) %>%
+  ungroup() %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate(norm_abund = rel_abund * copies) %>%
+  select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
+  left_join(taxtab, by = 'name') %>%
+  mutate(sample = ifelse(substr(Group, 1, 1) == 'M', 'Bulk microbiota', 'Ethanol + EMA treated'))
+
+otu_plot <- otu_long %>%
+  mutate(phylum = ifelse(Phylum %in% c('Firmicutes', 'Bacteroidetes', 'Actinobacteria', 'Proteobacteria', 'Bacteria_unclassified'), Phylum, 'Other')) %>%
+  mutate(phylum = case_when(
+    phylum == 'Firmicutes' ~ 'Bacillota',
+    phylum == 'Bacteroidetes' ~ 'Bacteroidota',
+    phylum == 'Actinobacteria' ~ 'Actinomycetota',
+    phylum == 'Proteobacteria' ~ 'Pseudomonadota',
+    phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
+    TRUE ~ phylum ))  # retain any values that do not match above expressions
+
+otu_plot$phylum <- factor(otu_plot$phylum, levels = c('Bacillota', 'Bacteroidota', 'Actinomycetota', 'Pseudomonadota', 'unclassified Bacteria', 'Other'))
+
+otu_plot %>%
+  group_by(sample) %>%
+  mutate(rel_abund2 = rel_abund/sum(rel_abund)) %>%
+  ggplot(aes(x = sample, y = rel_abund2, fill = phylum)) +
+  geom_col() +
+  scale_fill_manual(values = c('#27ae60', '#a569bd', '#f4d03f', '#5dade2', '#e74c3c', '#1527a9')) +
+  labs(x = '', y = 'Relative abundance', fill = '')
+ggsave('endospore_dynamics/out/supplement_figure1_v4.png', dpi = 600)

@@ -27,7 +27,6 @@ seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
 tree <- readRDS('data/r_data/tree.RDS')
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
-otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
 
 # Define ethanol resistant OTUs and seqs! 
 otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
