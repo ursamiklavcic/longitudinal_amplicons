@@ -19,13 +19,13 @@ ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
 otu_long <- readRDS('data/r_data/otu_long.RDS')
 
-sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
+sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
   pull(unique(name))
 
 # Create a table for comparisons 
 otutab_norm <- otutab_absrel %>%
   filter(substr(Group, 1, 1) == 'M') %>%
-  left_join(select(metadata, Group, original_sample, person, day), by ='Group') %>%
+  left_join(select(metadata, Group, original_sample, person, day, date), by ='Group') %>%
   left_join(filter(otutab_absrel, substr(Group, 1, 1) == 'S') %>%
               left_join(select(metadata, Group, original_sample), by ='Group'), by = c('original_sample', 'name')) %>%
   # Filter out the OTUs that have 0 normalized abundance
@@ -124,7 +124,8 @@ otu_90 = intersect(otu_alwaysM, otu_alwaysS)
 otutabME <- otutab_norm %>%
   filter(name %in% sporeformers_list & name %in% otu_90 ) %>%
   filter(!is.na(mi) & !is.na(ei)) %>%
-  select(name, person, day, mi, ei, original_sample)
+  select(name, person, day, date, mi, ei, original_sample)
+saveRDS(otutabME, 'data/r_data/otutabME.RDS')
 
 # Mi/ni over time in each person 
 otutabME %>%
@@ -410,3 +411,21 @@ ggplot(results, aes(x = name, y = name2, fill = value)) +
   labs( x = '', y = '') +
   facet_wrap(~person, nrow = 3, scales = 'free')
 ggsave('out/heatmap_byperson.png', height = 20, width = 20, units = 'cm', dpi=600)
+
+# is there any correlation between sporulation frequency and relative abundance of the OTU? 
+rel_freq <- otutabME %>%
+  left_join(select(otu_long, name, person, date, original_sample, rel_abund), by = c('name', 'person', 'date', 'original_sample')) %>%
+  mutate(sporulation_frequency = mi/ei)
+
+rel_freq %>%
+  ggplot(aes(x = rel_abund, y = mi/ei)) +
+  geom_point(size=3) +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_abline(intercept = 1) +
+  annotate('text', x = 1, y = 1e7, label = paste('cor:', round(rf_cor$estimate, digits = 3) ,'\n', 'p=', round(rf_cor$p.value, digits=3))) +
+  labs(x = 'Relative abundance', y = 'Sporulation frequency mi/ei')
+
+rf_cor <- cor.test(rel_freq$rel_abund, rel_freq$sporulation_frequency, method = 'pearson')
+ggsave('endospore_dynamics/out/sporulation_frequency_relative_abundance_corr.png', dpi=600)
+

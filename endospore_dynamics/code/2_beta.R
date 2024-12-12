@@ -22,30 +22,31 @@ tree <- readRDS('data/r_data/tree.RDS')
 
 # Colors to be used
 col <- c('#3CB371', '#f0a336')
-col4 <- c('#f0a336', '#3CB371', '#f35020', '#1a8b14')
+col4 <- c('#f0a336', '#3CB371', '#f35020', '#4a869c')
 ##  OTU analysis 
 
 # Create the 4 fractions 
 # Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
 # At the level of Bacillota 
-etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
+etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
   mutate(Group = paste0(Group, "-EB"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Bacillota', fraction = 'Ethanol resistant Bacillota')
 # min = 78
 
-non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum == 'Firmicutes') %>%
+non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum == 'Bacillota') %>%
   mutate(Group = paste0(Group, "-NB"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Bacillota', fraction = 'Ethanol non-resistant Bacillota')
 # min = 343
 
-etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum != 'Firmicutes') %>%
+etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum != 'Bacillota') %>%
   mutate(Group = paste0(Group, "-E"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Other taxa', fraction = 'Other ethanol resistant taxa') 
 # min = 24
 
-non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum != 'Firmicutes') %>% 
+non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum != 'Bacillota') %>% 
   mutate(Group = paste0(Group, "-NE"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Other taxa', fraction = 'Other ethanol non-resistant taxa')
 # min = 64
 
 ##
 long_all <- rbind(etoh_bacillota, non_etoh_bacillota, etoh_other, non_etoh_other)
+saveRDS(long_all, 'data/r_data/long_all.RDS')
 
 # 
 # # Plot percentages of individuals present and percent of OTUs present in individuals 

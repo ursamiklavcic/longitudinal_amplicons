@@ -39,8 +39,16 @@ otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
   left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
   mutate(norm_abund = rel_abund * copies) %>%
   select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
-  left_join(taxtab, by = 'name')
-#saveRDS(otu_long, 'data/r_data/otu_long.RDS')
+  left_join(taxtab, by = 'name') %>%
+  mutate(Phylum = ifelse(Phylum %in% c('Firmicutes', 'Bacteroidetes', 'Actinobacteria', 'Proteobacteria', 'Bacteria_unclassified'), Phylum, 'Other')) %>%
+  mutate(Phylum = case_when(
+    Phylum == 'Firmicutes' ~ 'Bacillota',
+    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
+    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
+    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
+    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
+    TRUE ~ Phylum )) 
+saveRDS(otu_long, 'data/r_data/otu_long.RDS')
 
 # OTU that is ethanol resistant once is always ethanol resistant 
 etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
@@ -63,7 +71,7 @@ etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'),
   #filter(no_Yes > 1) %>%
   # Extract names! 
   pull(unique(name))
-#saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
+saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
 
 length(unique(etoh_otus))
 
