@@ -429,3 +429,30 @@ rel_freq %>%
 rf_cor <- cor.test(rel_freq$rel_abund, rel_freq$sporulation_frequency, method = 'pearson')
 ggsave('endospore_dynamics/out/sporulation_frequency_relative_abundance_corr.png', dpi=600)
 
+# Correlation betwen higher/lower sporulation frequency and certain OTU abundance / familiy/genus ? 
+miei <- otutabME %>%
+  mutate(mi_ei = mi/ei) %>%
+  group_by(person, date) %>%
+  summarise(mean_miei= mean(mi_ei))
+
+mean <- otu_long %>%
+  group_by(person, date, Family) %>%
+  summarise(mean_rel = mean(rel_abund))
+
+both <- otu_long %>% left_join(otutabME, by = c('person', 'date') )
+
+cor.test(both$mean_miei, both$rel_abund)
+cor.test(both$mean_miei, both$norm_abund)
+
+aov(mean_miei ~ Family, data = both)
+aov(mean_miei ~ Genus, data = both)
+
+otu_long %>%
+  filter(!(name %in% otutabME$name)) %>%
+  group_by(person, date, Family) %>%
+  reframe(rel = mean(rel_abund)) %>%
+  ggplot(aes(x = date, y = rel, color = Family)) +
+  geom_line() +
+  scale_y_log10() +
+  facet_wrap(~person)
+  
