@@ -1,9 +1,5 @@
-#Load environemnt
-renv::restore()
-# renv::snapshot()
-
 # Load libraries
-library(renv)
+
 library(readxl)
 library(ggplot2)
 library(tidyr)
@@ -11,7 +7,6 @@ library(dplyr)
 library(vegan)
 library(tibble)
 library(scales)
-library(phyloseq)
 library(car) # dependency for ggpubr
 library(ggpubr)
 
@@ -172,3 +167,8 @@ otu_long_both %>%
   filter(PA.x == 1 & PA.y == 1) %>%
   summarize(no_otus = n_distinct(name)) 
 # In both samples we detected 1475 unique OTUs
+
+# How many OTUs from Bacillota are in ethanol tretaed samples?
+otu_long %>% filter(Phylum == 'Bacillota') %>%
+  #filter(name %in% etoh_otus) %>%
+  mutate(n = n_distinct(name))
