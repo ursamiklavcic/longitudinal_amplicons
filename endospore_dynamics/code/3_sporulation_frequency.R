@@ -455,4 +455,17 @@ otu_long %>%
   geom_line() +
   scale_y_log10() +
   facet_wrap(~person)
+
+otu_long %>%
+  group_by(person, date, Family, Phylum) %>%
+  reframe(rel = mean(rel_abund)) %>%
+  left_join(miei, by = c('person', 'date')) %>%
+  ggplot(aes(x = rel, y = mean_miei, color = Family)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  scale_x_log10() +
+  stat_cor(method = 'pearson') +
+  facet_wrap(~Phylum, ncol = 10, scales = 'free')
+
+
   
