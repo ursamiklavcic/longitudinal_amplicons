@@ -132,14 +132,7 @@ saveRDS(long_all, 'data/r_data/long_all.RDS')
 # What percentage of relative abundance are OTUs that are ethanol resistant ? 
 # In each phyla ? 
 otutab_plots <- long_all %>%
-  mutate(phylum = ifelse(Phylum %in% c('Firmicutes', 'Bacteroidetes', 'Actinobacteria', 'Proteobacteria', 'Bacteria_unclassified'), Phylum, 'Other')) %>%
-  mutate(phylum = case_when(
-    phylum == 'Firmicutes' ~ 'Bacillota',
-    phylum == 'Bacteroidetes' ~ 'Bacteroidota',
-    phylum == 'Actinobacteria' ~ 'Actinomycetota',
-    phylum == 'Proteobacteria' ~ 'Pseudomonadota',
-    phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
-    TRUE ~ phylum ))  # retain any values that do not match above expressions
+  rename(phylum = Phylum)
 
 otutab_plots$phylum <- factor(otutab_plots$phylum, levels = c('Bacillota', 'Bacteroidota', 'Actinomycetota', 'Pseudomonadota', 'unclassified Bacteria', 'Other'))
 
@@ -223,6 +216,7 @@ abundance <- otutab_plots %>%
 ap1 <- ggplot() +
   geom_col(abundance, mapping = aes(x = is_ethanol_resistant, y = rel_abund2, fill = phylum)) +
   labs(x = '', y = 'Relative abundance', fill = '')
+ggsave('endospore_dynamics/out/alternative_fig1_v2.png', dpi = 600)
 
 numbers <-  otutab_plots %>%
   group_by(is_ethanol_resistant, phylum) %>%
@@ -237,6 +231,24 @@ ggarrange(ap1, ap2,
           common.legend = TRUE, legend = 'bottom')
 ggsave('endospore_dynamics/out/alternative_fig1.png', dpi = 600)
 
+# pie chart to represent the differences in fraction 
+abundance %>%
+  mutate(is_ethanol_resistant = ifelse(is_ethanol_resistant == 'Ethanol resistant', 'Ethanol resistant fraction', 'Ethanol non-resistant fraction')) %>%
+  group_by(is_ethanol_resistant) %>%
+  mutate(rel_abund2 = rel_abund / sum(rel_abund)) %>%
+  group_by(is_ethanol_resistant, phylum) %>%
+  summarise(rel_abund3 = sum(rel_abund2)) %>%
+  ggplot(aes(x = '', y = rel_abund3, fill = phylum)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar('y', start = 0) +
+  theme_void() +
+  facet_grid(~is_ethanol_resistant) +
+  theme(legend.position = 'bottom', 
+        strip.text = element_text(size = 14), 
+        plot.title = element_text(size = 18, face = "bold")) +
+  labs(fill = '')
+
+ggsave('endospore_dynamics/out/alt_fig1_v3.png', dpi=600)
 # Are ethanol resistant OTUs more likely to be shared or present in a single individual? 
 # An OTU is present in an individual, if we saw it in at elast 1/3 of the samples (n=4).
 
