@@ -45,7 +45,7 @@ otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
     TRUE ~ Phylum )) 
 saveRDS(otu_long, 'data/r_data/otu_long.RDS')
 
-# OTU that is ethanol resistant once is always ethanol resistant 
+# 
 etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
                        otu_long %>% filter(substr(Group, 1, 1) == 'S'), 
                        by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
