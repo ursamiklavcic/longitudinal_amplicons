@@ -186,8 +186,7 @@ otus <-  var_host_population_otus %>%
   #scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
   labs(x = '',y= expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")) +
   coord_flip() +
-  theme(legend.position = 'none') +
-  coord_flip()
+  theme(legend.position = 'none') 
 otus
 ggsave('out/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
@@ -218,6 +217,16 @@ time <- otutabME %>%
   facet_wrap(~person, scales = 'free')
 time
 ggsave('out/logmiei_person_time.png', dpi = 600)
+
+otutabME %>%
+  left_join(taxtab, by = 'name') %>%
+  ggplot(aes(x = day, y = mi/ei)) +
+  geom_point() +
+  geom_line(aes(color = paste(name, Genus)), linewidth = 1) +
+  facet_wrap(~person) +
+  scale_y_log10() +
+  labs(x = 'Day', y = expression(log(m[i] / e[i]))) +
+  facet_wrap(~person, scales = 'free')
 
 # All plots figure 3
 host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
