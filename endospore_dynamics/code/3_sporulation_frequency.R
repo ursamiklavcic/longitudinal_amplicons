@@ -127,16 +127,6 @@ otutabME <- otutab_norm %>%
   select(name, person, day, date, mi, ei, original_sample)
 saveRDS(otutabME, 'data/r_data/otutabME.RDS')
 
-# Mi/ni over time in each person 
-otutabME %>%
-  ggplot(aes(x = day, y = log10(mi/ei), color = name)) +
-  geom_point(show.legend = FALSE) +
-  geom_line(show.legend = FALSE) +
-  labs(x = 'Day', y = 'log10 (mi/ei)') +
-  facet_wrap(~person, scales = 'free')
-ggsave('out/logmiei_person_time.png', dpi = 600)
-
-
 ##
 # Is the variance of an OTU correlated with HOST 
 # simple plot
@@ -179,7 +169,7 @@ individual <- ggplot(var_host_population, aes(x = fct_rev(person), y = var_perso
   geom_boxplot() +
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   geom_hline(yintercept = 1) +
-  labs(x = 'Individuals', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)', color = '') +
+  labs(x = 'Individuals', y= expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")) +
   coord_flip()
 individual
 ggsave('out/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
@@ -194,13 +184,70 @@ otus <-  var_host_population_otus %>%
   geom_hline(yintercept = 1) +
   theme(axis.text.x = element_markdown()) +
   #scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
-  labs(x = '', y= 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)') +
+  labs(x = '',y= expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")) +
+  coord_flip() +
   theme(legend.position = 'none') +
   coord_flip()
 otus
 ggsave('out/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 
+# # Normalize the time value, by mean value if mi/ei for each OTU
+# days <- otutabME %>%
+#   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
+#   group_by(person, name) %>%
+#   mutate(mean = mean(mi/ei, na.rm = TRUE)) %>%
+#   ungroup() %>%
+#   ggplot(aes(x = day, y = (mi/ei)/mean)) +
+#   geom_point() +
+#   geom_line(aes(color = name), show.legend = FALSE) +
+#   facet_wrap(~person) +
+#   scale_y_log10() +
+#   labs(x = 'Day', y = 'log10(mi/ei) / mean(log10(mi/ei))', color = '')
+# days
+# ggsave('out/mini_days_person.png', dpi=600)
+
+# Without normalization of sporulation frequency 
+time <- otutabME %>%
+  ggplot(aes(x = day, y = mi/ei)) +
+  geom_point() +
+  geom_line(aes(color = name), show.legend = FALSE) +
+  facet_wrap(~person) +
+  scale_y_log10() +
+  labs(x = 'Day', y = expression(log(m[i] / e[i]))) +
+  facet_wrap(~person, scales = 'free')
+time
+ggsave('out/logmiei_person_time.png', dpi = 600)
+
+# All plots figure 3
+host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
+                             otus + labs(tag = 'C') + theme(axis.title.x = element_blank()), 
+                             common.legend = FALSE, legend = 'right', widths = c(.7,1))
+
+host_population <- annotate_figure(host_population, bottom = text_grob(expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")))
+
+ggarrange(time + labs(tag = 'A'), host_population, common.legend = FALSE, nrow = 2, 
+          heights = c(1, 1))
+ggsave('out/varhost_varpopulation_all_v9.png', dpi=600)
+
+# Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
+kruskal.test(var_person/var_population ~ person, data = var_host_population)
+
+# Pairwise comparison 
+pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_population,
+                     var_host_population$person,
+                     p.adjust.method = "BH")
+
+# For OTUs 
+kruskal.test(var_person/var_population ~ name, data = var_host_population)
+
+# Pairwise comparison 
+pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_population,
+                     var_host_population$name,
+                     p.adjust.method = "BH")
+
+
+# Just additional plots for me 
 #
 var_host_population %>%
   ggplot(aes(x = var_person/var_population)) +
@@ -231,49 +278,8 @@ otutabME %>%
   facet_wrap(~person) +
   labs(color = 'Time point')
 ggsave('out/density_miei_day_person.png')
+# End of additional plots for me 
 
-# Normalize the time value, by mean value if mi/ei for each OTU
-days <- otutabME %>%
-  filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
-  group_by(person, name) %>%
-  mutate(mean = mean(mi/ei, na.rm = TRUE)) %>%
-  ungroup() %>%
-  ggplot(aes(x = day, y = (mi/ei)/mean)) +
-  geom_point() +
-  geom_line(aes(color = name), show.legend = FALSE) +
-  facet_wrap(~person) +
-  scale_y_log10() +
-  labs(x = 'Day', y = 'log10(mi/ei) / mean(log10(mi/ei))', color = '')
-days
-ggsave('out/mini_days_person.png', dpi=600)
-
-
-# All plots figure 3
-host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
-                             otus + labs(tag = 'C') + theme(axis.title.x = element_blank()), 
-                             common.legend = FALSE, legend = 'right', widths = c(.7,1))
-
-host_population <- annotate_figure(host_population, bottom = "Individual variance of log(mi/ei) / Population variance of log (mi/ei)")
-
-ggarrange(days + labs(tag = 'A'), host_population, common.legend = FALSE, nrow = 2, 
-          heights = c(1, 1))
-ggsave('out/varhost_varpopulation_all3.png', dpi=600)
-
-# Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
-kruskal.test(var_person/var_population ~ person, data = var_host_population)
-
-# Pairwise comparison 
-pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_population,
-                     var_host_population$person,
-                     p.adjust.method = "BH")
-
-# For OTUs 
-kruskal.test(var_person/var_population ~ name, data = var_host_population)
-
-# Pairwise comparison 
-pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_population,
-                     var_host_population$name,
-                     p.adjust.method = "BH")
 
 
 ##
