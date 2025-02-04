@@ -13,12 +13,12 @@ set.seed(96)
 theme_set(theme_bw())
 
 otutabEM <- readRDS('data/r_data/otutabEM.RDS')
-seqtab <- readRDS('data/r_data/seqtab.RDS')
+#seqtab <- readRDS('data/r_data/seqtab.RDS')
 metadata <- readRDS('data/r_data/metadata.RDS')
 taxtab <- readRDS('data/r_data/taxtab.RDS')
-seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
+#seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
-tree <- readRDS('data/r_data/tree.RDS')
+#tree <- readRDS('data/r_data/tree.RDS')
 
 # Colors to be used
 col <- c('#3CB371', '#f0a336')
