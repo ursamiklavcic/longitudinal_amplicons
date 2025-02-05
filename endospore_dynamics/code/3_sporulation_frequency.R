@@ -151,10 +151,10 @@ ggsave('out/log(miei)_individualsAndPopulation.png', dpi = 600)
 var_host_population <- otutabME %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(name) %>%
-  summarise(var_population = var(log(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_population = var(log(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
   left_join(otutabME %>%
               group_by(person, name) %>%
-              summarise(var_person = var(log(mi/ei), na.rm = TRUE), .groups = 'drop'), by = 'name') 
+              summarise(var_person = var(log(ei/mi), na.rm = TRUE), .groups = 'drop'), by = 'name') 
 
 person_order <- var_host_population %>%
   group_by(person) %>%
@@ -169,7 +169,7 @@ individual <- ggplot(var_host_population, aes(x = fct_rev(person), y = var_perso
   geom_boxplot() +
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   geom_hline(yintercept = 1) +
-  labs(x = 'Individuals', y= expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")) +
+  labs(x = 'Individuals', y= expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")) +
   coord_flip()
 individual
 ggsave('out/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
@@ -184,7 +184,7 @@ otus <-  var_host_population_otus %>%
   geom_hline(yintercept = 1) +
   theme(axis.text.x = element_markdown()) +
   #scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
-  labs(x = '',y= expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")) +
+  labs(x = '',y= expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")) +
   coord_flip() +
   theme(legend.position = 'none') 
 otus
@@ -208,12 +208,12 @@ ggsave('out/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', 
 
 # Without normalization of sporulation frequency 
 time <- otutabME %>%
-  ggplot(aes(x = day, y = mi/ei)) +
+  ggplot(aes(x = day, y = ei/mi)) +
   geom_point() +
   geom_line(aes(color = name), show.legend = FALSE) +
   facet_wrap(~person) +
   scale_y_log10() +
-  labs(x = 'Day', y = expression(log(m[i] / e[i]))) +
+  labs(x = 'Day', y = expression(log(e[i] / m[i]))) +
   facet_wrap(~person, scales = 'free')
 time
 ggsave('out/logmiei_person_time.png', dpi = 600)
@@ -221,22 +221,21 @@ ggsave('out/logmiei_person_time.png', dpi = 600)
 otutabME %>%
   left_join(taxtab, by = 'name') %>%
   ggplot(aes(x = day, y = mi/ei)) +
-  geom_point() +
-  geom_line(aes(color = paste(name, Genus)), linewidth = 1) +
+  geom_line(aes(color = Genus, group = name), linewidth=1.5) +
   facet_wrap(~person) +
   scale_y_log10() +
   labs(x = 'Day', y = expression(log(m[i] / e[i]))) +
   facet_wrap(~person, scales = 'free')
-
+ggsave('out/time_by_otu_byGenus.png')
 # All plots figure 3
 host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
                              otus + labs(tag = 'C') + theme(axis.title.x = element_blank()), 
                              common.legend = FALSE, legend = 'right', widths = c(.7,1))
 
-host_population <- annotate_figure(host_population, bottom = text_grob(expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")))
+host_population <- annotate_figure(host_population, bottom = text_grob(expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")))
 
 ggarrange(time + labs(tag = 'A'), host_population, common.legend = FALSE, nrow = 2, 
-          heights = c(1, 1))
+          heights = c(1, 0.8))
 ggsave('out/varhost_varpopulation_all_v9.png', dpi=600)
 
 # Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
