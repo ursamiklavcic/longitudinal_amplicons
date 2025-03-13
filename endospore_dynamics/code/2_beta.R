@@ -13,12 +13,16 @@ set.seed(96)
 theme_set(theme_bw())
 
 otutabEM <- readRDS('data/r_data/otutabEM.RDS')
+otu_long <- readRDS('data/r_data/otu_long.RDS')
 #seqtab <- readRDS('data/r_data/seqtab.RDS')
 metadata <- readRDS('data/r_data/metadata.RDS')
 taxtab <- readRDS('data/r_data/taxtab.RDS')
 #seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 #tree <- readRDS('data/r_data/tree.RDS')
+
+etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
+
 
 # Colors to be used
 col <- c('#3CB371', '#f0a336')
@@ -246,9 +250,10 @@ abundance %>%
   theme(legend.position = 'bottom', 
         strip.text = element_text(size = 14), 
         plot.title = element_text(size = 18, face = "bold")) +
-  labs(fill = '')
+  labs(fill = '') +
+  guides(fill = guide_legend(nrow = 1))
 
-ggsave('endospore_dynamics/out/alt_fig1_v3.png', dpi=600)
+ggsave('endospore_dynamics/out/alt_fig1_v3.png', dpi=300)
 # Are ethanol resistant OTUs more likely to be shared or present in a single individual? 
 # An OTU is present in an individual, if we saw it in at elast 1/3 of the samples (n=4).
 

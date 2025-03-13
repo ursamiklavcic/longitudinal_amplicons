@@ -107,22 +107,22 @@ otuPA <- otutab_absrel %>%
 otu_alwaysM <- otuPA %>%
   select(starts_with('M')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum > ((ncol(.) -1)*0.9)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.7)) %>%
   rownames_to_column('name') %>%
   pull(name)
 
 otu_alwaysS = otuPA %>%
   select(starts_with('S')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum > ((ncol(.) -1)*0.9)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.7)) %>%
   rownames_to_column('name') %>%
   pull(name)
 
-otu_90 = intersect(otu_alwaysM, otu_alwaysS)
+otu_85 = intersect(otu_alwaysM, otu_alwaysS)
 
 # Variance of log(mi/ni)
 otutabME <- otutab_norm %>%
-  filter(name %in% sporeformers_list & name %in% otu_90 ) %>%
+  filter(name %in% sporeformers_list & name %in% otu_85 ) %>%
   filter(!is.na(mi) & !is.na(ei)) %>%
   select(name, person, day, date, mi, ei, original_sample)
 saveRDS(otutabME, 'data/r_data/otutabME.RDS')
@@ -154,7 +154,10 @@ var_host_population <- otutabME %>%
   summarise(var_population = var(log(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
   left_join(otutabME %>%
               group_by(person, name) %>%
-              summarise(var_person = var(log(ei/mi), na.rm = TRUE), .groups = 'drop'), by = 'name') 
+              summarise(var_person = var(log(ei/mi), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
+  left_join(taxtab, by = 'name') %>%
+  filter(!(Genus %in% c('Roseburia', 'Streptococcus'))) %>%
+  mutate(genus2 = paste(str_replace_all(Genus, "_", " "), '(',name,')')) 
 
 person_order <- var_host_population %>%
   group_by(person) %>%
@@ -174,11 +177,7 @@ individual <- ggplot(var_host_population, aes(x = fct_rev(person), y = var_perso
 individual
 ggsave('out/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
-var_host_population_otus <- var_host_population %>%
-  left_join(taxtab, by = 'name') %>%
-  mutate(genus2 = paste(str_replace_all(Genus, "_", " "), '(', name, ')'))
-
-otus <-  var_host_population_otus %>%
+otus <-  var_host_population %>%
   ggplot(aes(x = fct_rev(genus2), y = var_person/var_population)) +
   geom_boxplot() +
   geom_hline(yintercept = 1) +
@@ -228,13 +227,13 @@ otutabME %>%
   facet_wrap(~person, scales = 'free')
 ggsave('out/time_by_otu_byGenus.png')
 # All plots figure 3
-host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank()), 
-                             otus + labs(tag = 'C') + theme(axis.title.x = element_blank()), 
+host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x = element_blank(), base_size = 12), 
+                             otus + labs(tag = 'C') + theme(axis.title.x = element_blank(), base_size = 12), 
                              common.legend = FALSE, legend = 'right', widths = c(.7,1))
 
 host_population <- annotate_figure(host_population, bottom = text_grob(expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")))
 
-ggarrange(time + labs(tag = 'A'), host_population, common.legend = FALSE, nrow = 2, 
+ggarrange(time + labs(tag = 'A') + theme(base_size = 12), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 0.8))
 ggsave('out/varhost_varpopulation_all_v9.png', dpi=600)
 
