@@ -216,10 +216,12 @@ abundance <- otutab_plots %>%
   group_by(is_ethanol_resistant) %>%
   mutate(rel_abund2 = rel_abund / sum(rel_abund)) %>%
   ungroup()
-
+library(scales)
 ap1 <- ggplot() +
   geom_col(abundance, mapping = aes(x = is_ethanol_resistant, y = rel_abund2, fill = phylum)) +
-  labs(x = '', y = 'Relative abundance', fill = '')
+  labs(x = '', y = 'Relative abundance', fill = '') +
+  scale_fill_manual(values = scales::alpha(c('#289b36', '#dabd37', '#da4037', '#3765da', '#da3790', '#37dad7'), .8))
+ap1
 ggsave('endospore_dynamics/out/alternative_fig1_v2.png', dpi = 600)
 
 numbers <-  otutab_plots %>%
