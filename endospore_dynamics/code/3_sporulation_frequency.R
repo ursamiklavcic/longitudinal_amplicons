@@ -9,7 +9,7 @@ library(scales)
 library(stringr)
 
 set.seed(96)
-theme_set(theme_bw())
+theme_set(theme_bw(base_size = 12))
 
 # Import data
 otutab_absrel <- readRDS('data/r_data/otutab_absrel.RDS')
@@ -107,22 +107,22 @@ otuPA <- otutab_absrel %>%
 otu_alwaysM <- otuPA %>%
   select(starts_with('M')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum > ((ncol(.) -1)*0.7)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.8)) %>%
   rownames_to_column('name') %>%
   pull(name)
 
 otu_alwaysS = otuPA %>%
   select(starts_with('S')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum > ((ncol(.) -1)*0.7)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.8)) %>%
   rownames_to_column('name') %>%
   pull(name)
 
-otu_85 = intersect(otu_alwaysM, otu_alwaysS)
+otu_80 = intersect(otu_alwaysM, otu_alwaysS)
 
 # Variance of log(mi/ni)
 otutabME <- otutab_norm %>%
-  filter(name %in% sporeformers_list & name %in% otu_85 ) %>%
+  filter(name %in% sporeformers_list & name %in% otu_80 ) %>%
   filter(!is.na(mi) & !is.na(ei)) %>%
   select(name, person, day, date, mi, ei, original_sample)
 saveRDS(otutabME, 'data/r_data/otutabME.RDS')
@@ -178,13 +178,31 @@ individual
 ggsave('out/varPersonPopulation_v1.png', height = 20, width = 30, units= 'cm', dpi = 600)
 
 otus <-  var_host_population %>%
-  ggplot(aes(x = fct_rev(genus2), y = var_person/var_population)) +
+  ggplot(aes(y = fct_rev(genus2), x = var_person/var_population)) +
   geom_boxplot() +
-  geom_hline(yintercept = 1) +
-  theme(axis.text.x = element_markdown()) +
-  #scale_x_discrete(labels = function(x) stringr::str_replace(x, " ", "\n")) +
-  labs(x = '',y= expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")) +
-  coord_flip() +
+  geom_vline(xintercept = 1) +
+  scale_y_discrete(labels = c(
+    expression(italic("Anaerostipes")~"(Otu000019)"),
+    expression(italic("Blautia")~"(Otu000013)"),
+    expression(italic("Blautia")~"(Otu000015)"),
+    expression(italic("Blautia")~"(Otu000017)"),
+    expression(italic("Blautia")~"(Otu000047)"),
+    expression("Clostridiales"~"(Otu000041)"),
+    expression(italic("Clostridium sensu stricto")~"(Otu000021)"),
+    expression(italic("Clostridium")~"(Otu000031)"),
+    expression(italic("Clostridium")~"XI (Otu000014)"),
+    expression(italic("Clostridium")~"XIVa (Otu000037)"),
+    expression(italic("Clostridium")~"XIVa (Otu000043)"),
+    expression(italic("Clostridium")~"XIVa (Otu000050)"),
+    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000002)"),
+    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000003)"),
+    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000004)"),
+    expression("Lachnospiraceae"~"(Otu000023)"),
+    expression("Lachnospiraceae"~"(Otu000028)"),
+    expression("Lachnospiraceae"~"(Otu000033)"),
+    expression(italic("Ruminococcus")~"(Otu000008)"),
+    expression(italic("Turicibacter")~"(Otu000038)"))) +
+  labs(y = '', x= expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")) +
   theme(legend.position = 'none') 
 otus
 ggsave('out/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', dpi = 600)
@@ -235,7 +253,7 @@ host_population <- annotate_figure(host_population, bottom = text_grob(expressio
 
 ggarrange(time + labs(tag = 'A') + theme(base_size = 12), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 0.8))
-ggsave('out/varhost_varpopulation_all_v9.png', dpi=600)
+ggsave('endospore_dynamics/out/varhost_varpopulation_all_v10.png', dpi=600)
 
 # Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
 kruskal.test(var_person/var_population ~ person, data = var_host_population)
