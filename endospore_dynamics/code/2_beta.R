@@ -10,7 +10,7 @@ library(car) # dependency for ggpubr
 library(ggpubr)
 
 set.seed(96)
-theme_set(theme_bw())
+theme_set(theme_bw(base_size = 12))
 
 otutabEM <- readRDS('data/r_data/otutabEM.RDS')
 otu_long <- readRDS('data/r_data/otu_long.RDS')
@@ -220,7 +220,13 @@ library(scales)
 ap1 <- ggplot() +
   geom_col(abundance, mapping = aes(x = is_ethanol_resistant, y = rel_abund2, fill = phylum)) +
   labs(x = '', y = 'Relative abundance', fill = '') +
-  scale_fill_manual(values = scales::alpha(c('#289b36', '#dabd37', '#da4037', '#3765da', '#da3790', '#37dad7'), .8))
+  scale_fill_manual(values = scales::alpha(c('#289b36', '#dabd37', '#da4037', '#3765da', '#da3790', '#37dad7'), .8), 
+                    labels = c(expression(italic("Bacillota")),
+                               expression(italic("Bacteroidota")),
+                               expression(italic("Actinomycetota")),
+                               expression(italic("Pseudomonadota")),
+                               expression("unclassified"~italic("Bacteria")),"Other")) +
+  theme(legend.position = 'bottom')
 ap1
 ggsave('endospore_dynamics/out/alternative_fig1_v2.png', dpi = 600)
 
@@ -322,7 +328,7 @@ calculate_dist <- function(otu_data, method) {
     separate(sample_pairs, into = c("Group", "name"), sep = " ") %>%
     left_join(meta, by = 'Group') %>%
     left_join(meta, by = join_by('name' == 'Group', 'fraction', 'is_ethanol_resistant', 'taxonomy')) %>%
-    mutate(same_person = ifelse(person.x == person.y, 'Intra individual', 'Inter individual'), 
+    mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
            date_dist = abs(date.x-date.y))
   
   return(dist)
@@ -336,13 +342,13 @@ bray <- calculate_dist(etoh_bacillota, 'bray') %>%
 
 # Kruskal test for Bray-Curtis distances 
 # Within individual 
-bray_within <- filter(bray, same_person == 'Intra individual')
+bray_within <- filter(bray, same_person == 'Within individual') 
 
 kruskal_within <- kruskal.test(median_value~fraction, data = bray_within)
 # But between which groups ?
 wilcox_within <- pairwise.wilcox.test(bray_within$median_value, bray_within$fraction, paired = FALSE)
 # Between 
-bray_between <- filter(bray, same_person == 'Inter individual')
+bray_between <- filter(bray, same_person == 'Between individuals') 
 kruskal_between <- kruskal.test(median_value ~fraction, data = bray_between)
 wilcox_between <- pairwise.wilcox.test(bray_between$median_value, bray_between$fraction, paired = FALSE)
 
@@ -360,8 +366,8 @@ wilcox_to_df <- function(wilcox_result, same_person_label) {
   return(pval)
 }
 
-wilcox_bray <- rbind(wilcox_to_df(wilcox_between, 'Inter individual'), 
-                     wilcox_to_df(wilcox_within, 'Intra individual')) %>%
+wilcox_bray <- rbind(wilcox_to_df(wilcox_between, 'Within individual'), 
+                     wilcox_to_df(wilcox_within, 'Between individuals')) %>%
   mutate(is_ethanol_resistant = ifelse(fraction1 %in% c('Ethanol resistant Bacillota', 'Other ethanol resistant taxa'), 'Ethanol resistant', 'Ethanol non-resistant'), 
          taxonomy = ifelse(fraction1 %in% c('Ethanol resistant Bacillota', 'Ethanol non-resistant Bacillota'), 'Bacillota', 'Other taxa'), 
          is_ethanol_resistant2 = ifelse(fraction2 %in% c('Ethanol resistant Bacillota', 'Other ethanol resistant taxa'), 'Ethanol resistant', 'Ethanol non-resistant'), 
@@ -390,7 +396,7 @@ time_corr <- function(data) {
 
 time_bray <- bray %>%
   # Filter different individuals
-  filter(same_person == 'Intra individual') %>%
+  filter(same_person == 'Within individual') %>%
   # group by difference between days and person
   group_by(fraction, is_ethanol_resistant, taxonomy,  date_dist) %>%
   reframe(median=median(median_value), sd= sd(median_value)) %>%
@@ -409,16 +415,30 @@ bray_boxplot <- ggplot(bray) +
   labs(y = 'Bray-Curtis dissimilarity', x = '', fill = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom', axis.ticks.x = element_blank()) +
   guides(fill = guide_legend(ncol = 4)) +
-  facet_grid(~same_person) 
+  facet_grid(~same_person) +
+  scale_x_discrete(labels = c("Bacillota" = expression(italic("Bacillota")), "Other taxa" = "Other taxa")) +
+  scale_linetype_manual(values = c("Bacillota" = "solid", "Other taxa" = "dashed"),
+                        labels = c(expression(italic("Bacillota")), "Other taxa"))
+bray_boxplot
 
-b_time <- time_bray %>%
-  ggplot(aes(x = date_dist, y = median, color = is_ethanol_resistant)) +
-  geom_point() +
-  geom_smooth(method = 'lm', se = TRUE, alpha = .2, mapping = aes(linetype = taxonomy, color = is_ethanol_resistant)) +
+
+b_time <-  ggplot(time_bray) +
+  geom_point(mapping = aes(x = date_dist, y = median, color = is_ethanol_resistant)) +
+  geom_smooth(method = 'lm', se = TRUE, alpha = .2, mapping = aes(x = date_dist, y = median, linetype = taxonomy, color = is_ethanol_resistant)) +
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Bray-Curtis dissimilarity', color = '', linetype = 'Phylum') +
-  theme(legend.position = 'bottom')
+  theme(legend.position = 'bottom') +
+  guides(fill = guide_legend(ncol = 4)) +
+  scale_linetype_manual(values = c("Bacillota" = "solid", "Other taxa" = "dashed"),
+                        labels = c(expression(italic("Bacillota")), "Other taxa"))
 b_time
+
+# Combine plots with a shared legend
+ggarrange(bray_boxplot + labs(tag = 'A'), 
+          b_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
+
+ggsave('endospore_dynamics/out/supplement_figure1.png', dpi = 600)
+
 
 ##
 # Jaccard 
@@ -429,18 +449,18 @@ jaccard <- calculate_dist(etoh_bacillota, 'jaccard') %>%
 
 # Kruskal test for jaccard distances 
 # Within individual 
-jaccard_within <- filter(jaccard, same_person == 'Intra individual')
+jaccard_within <- filter(jaccard, same_person == 'Within individual')
 
 kruskal_within <- kruskal.test(median_value~fraction, data = jaccard_within)
 # But between which groups ?
 wilcox_within <- pairwise.wilcox.test(jaccard_within$median_value, jaccard_within$fraction, paired = FALSE)
 # Between 
-jaccard_between <- filter(jaccard, same_person == 'Inter individual')
+jaccard_between <- filter(jaccard, same_person == 'Between individuals')
 kruskal_between <- kruskal.test(median_value ~fraction, data = jaccard_between)
 wilcox_between <- pairwise.wilcox.test(jaccard_between$median_value, jaccard_between$fraction, paired = FALSE)
 
-wilcox_jaccard <- rbind(wilcox_to_df(wilcox_between, 'Inter individual'), 
-                        wilcox_to_df(wilcox_within, 'Intra individual')) %>%
+wilcox_jaccard <- rbind(wilcox_to_df(wilcox_between, 'Between individuals'), 
+                        wilcox_to_df(wilcox_within, 'Within individual')) %>%
   mutate(is_ethanol_resistant = ifelse(fraction1 %in% c('Ethanol resistant Bacillota', 'Other ethanol resistant taxa'), 'Ethanol resistant', 'Ethanol non-resistant'), 
          taxonomy = ifelse(fraction1 %in% c('Ethanol resistant Bacillota', 'Ethanol non-resistant Bacillota'), 'Bacillota', 'Other taxa'), 
          is_ethanol_resistant2 = ifelse(fraction2 %in% c('Ethanol resistant Bacillota', 'Other ethanol resistant taxa'), 'Ethanol resistant', 'Ethanol non-resistant'), 
@@ -451,7 +471,7 @@ wilcox_jaccard <- rbind(wilcox_to_df(wilcox_between, 'Inter individual'),
 # Correlations for distance / time 
 time_jaccard <- jaccard %>%
   # Filter different individuals
-  filter(same_person == 'Intra individual') %>%
+  filter(same_person == 'Within individual') %>%
   # group by difference between days and person
   group_by(fraction, is_ethanol_resistant, taxonomy,  date_dist) %>%
   reframe(median=median(median_value), sd= sd(median_value)) %>%
@@ -470,7 +490,11 @@ jaccard_boxplot <- ggplot(jaccard) +
   labs(y = 'Jaccard distance', x = '', fill = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom', axis.ticks.x = element_blank()) +
   guides(fill = guide_legend(ncol = 4)) +
-  facet_grid(~same_person) 
+  facet_grid(~same_person) +
+  scale_x_discrete(labels = c("Bacillota" = expression(italic("Bacillota")), "Other taxa" = "Other taxa")) +
+  scale_linetype_manual(values = c("Bacillota" = "solid", "Other taxa" = "dashed"),
+                        labels = c(expression(italic("Bacillota")), "Other taxa"))
+jaccard_boxplot
 
 j_time <- time_jaccard %>%
   ggplot(aes(x = date_dist, y = median, color = is_ethanol_resistant)) +
@@ -478,13 +502,16 @@ j_time <- time_jaccard %>%
   geom_smooth(method = 'lm', se = TRUE, alpha = .2, mapping = aes(linetype = taxonomy, color = is_ethanol_resistant)) +
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Jaccard distance', color = '', linetype = 'Phylum') +
-  theme(legend.position = 'bottom')
+  theme(legend.position = 'bottom') +
+  scale_linetype_manual(values = c("Bacillota" = "solid", "Other taxa" = "dashed"),
+                        labels = c(expression(italic("Bacillota")), "Other taxa"))
+j_time
 
 # Combine plots with a shared legend
-ggarrange(bray_boxplot + labs(tag = 'A'), 
-          b_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
+ggarrange(jaccard_boxplot + labs(tag = 'A'), 
+          j_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
 
-ggsave('endospore_dynamics/out/supplement_figure1.png', dpi = 600)
+ggsave('endospore_dynamics/out/figure2.png', dpi = 600)
 
 # ## Sequences 
 # # Create the 4 fractions 
@@ -684,16 +711,6 @@ ggsave('endospore_dynamics/out/supplement_figure1.png', dpi = 600)
 #   labs(x = 'Days between sampling', y = 'unweighted UniFrac distance', color = '', linetype = 'Phylum') +
 #   theme(legend.position = 'bottom')
 # uu_time
-
-## Supplement plots 
-ggarrange(jaccard_boxplot + labs(tag = 'A'), j_time + labs(tag = 'B'),
-          nrow = 1, ncol = 2, common.legend = TRUE, legend = 'bottom')
-ggsave('endospore_dynamics/out/figure1.png', dpi=600)
-
-
-ggarrange(bray_boxplot + labs(tag = 'A'), b_time + labs(tag = 'B'), 
-          ncol = 2, common.legend = TRUE, legend = 'bottom')
-ggsave('endospore_dynamics/out/supplement_figure2.png', dpi=600)
 
 
 # Additional test for usage of beta diveristy metrics: Is the difference we see between ethanol resistant and ethanol non-resistant only, 
