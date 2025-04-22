@@ -977,5 +977,3 @@ ggplot(results, aes(x = name, y = name2, fill = value)) +
   labs( x = '', y = '') +
   facet_wrap(~person, nrow = 3, scales = 'free')
 ggsave('out/exploration/heatmap_byperson.png', height = 20, width = 20, units = 'cm', dpi=600)
-
-
