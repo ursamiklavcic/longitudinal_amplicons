@@ -43,7 +43,9 @@ otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
     Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
     Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
     TRUE ~ Phylum )) 
-saveRDS(otu_long, 'data/r_data/otu_long.RDS')
+
+
+# saveRDS(otu_long, 'data/r_data/otu_long.RDS')
 
 # 
 etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'), 
@@ -66,7 +68,7 @@ etoh_otus <- left_join(otu_long %>% filter(substr(Group, 1, 1) == 'M'),
   #filter(no_Yes > 1) %>%
   # Extract names! 
   pull(unique(name))
-saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
+# saveRDS(etoh_otus, 'data/r_data/etoh_otus.RDS')
 
 length(unique(etoh_otus))
 
@@ -88,6 +90,30 @@ nonetoh_otus <- otu_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
   filter(!(name %in% uncertain_otus) & !(name %in% etoh_otus)) %>%
   pull(unique(name))
 length(unique(nonetoh_otus))
+
+
+# Create the 4 fractions 
+# Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
+# At the level of Bacillota 
+etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
+  mutate(Group = paste0(Group, "-EB"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Bacillota', fraction = 'Ethanol resistant Bacillota')
+# min = 78
+
+non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum == 'Bacillota') %>%
+  mutate(Group = paste0(Group, "-NB"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Bacillota', fraction = 'Ethanol non-resistant Bacillota')
+# min = 343
+
+etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum != 'Bacillota') %>%
+  mutate(Group = paste0(Group, "-E"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Other', fraction = 'Other ethanol resistant taxa') 
+# min = 24
+
+non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum != 'Bacillota') %>% 
+  mutate(Group = paste0(Group, "-NE"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Other', fraction = 'Other ethanol non-resistant taxa')
+# min = 64
+
+##
+long_all <- rbind(etoh_bacillota, non_etoh_bacillota, etoh_other, non_etoh_other)
+# saveRDS(long_all, 'data/r_data/long_all.RDS')
 
 
 # The same but for sequences 

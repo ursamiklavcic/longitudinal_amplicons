@@ -151,10 +151,10 @@ ggsave('out/log(miei)_individualsAndPopulation.png', dpi = 600)
 var_host_population <- otutabME %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(name) %>%
-  summarise(var_population = var(log(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_population = var(log(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
   left_join(otutabME %>%
               group_by(person, name) %>%
-              summarise(var_person = var(log(ei/mi), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
+              summarise(var_person = var(log(mi/ei), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
   left_join(taxtab, by = 'name') %>%
   filter(!(Genus %in% c('Roseburia', 'Streptococcus'))) %>%
   mutate(genus2 = paste(str_replace_all(Genus, "_", " "), '(',name,')')) 
@@ -225,7 +225,7 @@ ggsave('out/varPersonPopulation_otu.png', height = 20, width = 30, units= 'cm', 
 
 # Without normalization of sporulation frequency 
 time <- otutabME %>%
-  ggplot(aes(x = day, y = ei/mi)) +
+  ggplot(aes(x = day, y = mi/ei)) +
   geom_point() +
   geom_line(aes(color = name), show.legend = FALSE) +
   facet_wrap(~person) +
@@ -249,7 +249,7 @@ host_population <- ggarrange(individual + labs(tag = 'B') + theme(axis.title.x =
                              otus + labs(tag = 'C') + theme(axis.title.x = element_blank(), base_size = 12), 
                              common.legend = FALSE, legend = 'right', widths = c(.7,1))
 
-host_population <- annotate_figure(host_population, bottom = text_grob(expression("Individual variance of log("*e[i]*"/"*m[i]*") / Population variance of log("*e[i]*"/"*m[i]*")")))
+host_population <- annotate_figure(host_population, bottom = text_grob(expression("Individual variance of log("*m[i]*"/"*e[i]*") / Population variance of log("*m[i]*"/"*e[i]*")")))
 
 ggarrange(time + labs(tag = 'A') + theme(base_size = 12), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 0.8))
@@ -348,7 +348,7 @@ base_shuffled %>%
   geom_abline() +
   annotate('text', x= 0.6, y = 1.5, label = paste("Pearson's correlation:", round(base_shuffled_res$estimate, digits = 3), '\n', 
                                                   "p-value =", round(base_shuffled_res$p.value, digits = 2))) +
-  labs(x = 'Individuals variance of log(mi/ni) in a day / Mean individuals variance of log(mi/ni)', y= 'Reshuffled individuals variance of log(mi/ni) in a day / Mean individuals variance of log(mi/ni)') 
+  labs(x = 'Individuals variance of log(mi/ni) in a day / Mean individuals variance of log(mi/ni)', y= 'Reshuffled individuals variance of log(mi/ei) in a day / Mean individuals variance of log(mi/ei)') 
 ggsave('out/statistics_variance_days.png', dpi = 600)
 
 

@@ -23,34 +23,38 @@ ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
 etoh_otus <- readRDS('data/r_data/etoh_otus.RDS')
 
+long_all <- readRDS('data/r_data/long_all.RDS')
+
 
 # Colors to be used
 col <- c('#3CB371', '#f0a336')
 col4 <- c('#f0a336', '#3CB371', '#f35020', '#4a869c')
 ##  OTU analysis 
 
-# Create the 4 fractions 
-# Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
-# At the level of Bacillota 
-etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
-  mutate(Group = paste0(Group, "-EB"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Bacillota', fraction = 'Ethanol resistant Bacillota')
-# min = 78
+# What is in the group other and How many are there 
+long_all %>%
+  filter(is_ethanol_resistant == 'Ethanol resistant') %>%
+  group_by(Phylum) %>%
+  reframe(rel = mean(rel_abund), 
+          no = n_distinct(name))
 
-non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum == 'Bacillota') %>%
-  mutate(Group = paste0(Group, "-NB"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Bacillota', fraction = 'Ethanol non-resistant Bacillota')
-# min = 343
+long_all %>%
+  filter(is_ethanol_resistant == 'Ethanol non-resistant') %>%
+  group_by(Phylum) %>%
+  reframe(rel = mean(rel_abund), 
+          no = n_distinct(name))
 
-etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum != 'Bacillota') %>%
-  mutate(Group = paste0(Group, "-E"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Other taxa', fraction = 'Other ethanol resistant taxa') 
-# min = 24
 
-non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum != 'Bacillota') %>% 
-  mutate(Group = paste0(Group, "-NE"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Other taxa', fraction = 'Other ethanol non-resistant taxa')
-# min = 64
+long_all <- readRDS('data/r_data/long_all.RDS') %>%
+  mutate(Phylum = ifelse(Phylum %in% c('Firmicutes', 'Bacteroidetes', 'Actinobacteria', 'Proteobacteria', 'Bacteria_unclassified'), Phylum, 'Other')) %>%
+  mutate(Phylum = case_when(
+    Phylum == 'Firmicutes' ~ 'Bacillota',
+    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
+    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
+    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
+    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
+    TRUE ~ Phylum )) 
 
-##
-long_all <- rbind(etoh_bacillota, non_etoh_bacillota, etoh_other, non_etoh_other)
-saveRDS(long_all, 'data/r_data/long_all.RDS')
 
 # 
 # # Plot percentages of individuals present and percent of OTUs present in individuals 
@@ -211,10 +215,26 @@ ggarrange(number + labs(tag = 'A'),
           nrow = 2, common.legend = TRUE, legend = 'bottom', align = 'v', heights = c(0.8, 1))
 ggsave('out/figure1.png', dpi=600)
 
+# 
+otutab_plots %>%
+  group_by(phylum, is_ethanol_resistant) %>%
+  reframe(rel = sum(rel_abund)) %>%
+  group_by(is_ethanol_resistant) %>%
+  reframe(rel = round(rel/sum(rel), digits = 3))
+
+# Individual genus etc. for results section 1 
+genus_rel <- otutab_plots %>%
+  filter(is_ethanol_resistant == 'Ethanol resistant' & phylum != 'Bacillota') %>%
+  filter(phylum == 'Pseudomonadota') %>%
+  group_by(Family) %>%
+  summarise(rel = round(sum(rel_abund), digits = 2))
+  
+
+
 # Alternative figure 1 
 abundance <- otutab_plots %>%
   group_by(is_ethanol_resistant) %>%
-  mutate(rel_abund2 = rel_abund / sum(rel_abund)) %>%
+  mutate(rel_abund2 =  rel_abund /sum(rel_abund)) %>%
   ungroup()
 library(scales)
 ap1 <- ggplot() +
@@ -226,9 +246,31 @@ ap1 <- ggplot() +
                                expression(italic("Actinomycetota")),
                                expression(italic("Pseudomonadota")),
                                expression("unclassified"~italic("Bacteria")),"Other")) +
-  theme(legend.position = 'bottom')
+  theme(legend.position = 'bottom') 
 ap1
+
 ggsave('endospore_dynamics/out/alternative_fig1_v2.png', dpi = 600)
+
+
+# version 11 alternative figure 1 
+# bulk microbiota is 100% , how much are ethanol resistant /non-resistant fractions 
+
+otutab_plots %>%
+  mutate(x = 'bla') %>%
+  group_by(x) %>%
+  reframe(rel_abund = rel_abund/sum(rel_abund), phylum = phylum, is_ethanol_resistant = is_ethanol_resistant) %>%
+  ggplot(aes(x = is_ethanol_resistant , y = rel_abund, fill = phylum)) +
+  geom_col() +
+  labs(x = '', y = 'Relative abundance', fill = '') +
+  scale_fill_manual(values = scales::alpha(c('#289b36', '#dabd37', '#da4037', '#3765da', '#da3790', '#37dad7'), .8), 
+                    labels = c(expression(italic("Bacillota")),
+                               expression(italic("Bacteroidota")),
+                               expression(italic("Actinomycetota")),
+                               expression(italic("Pseudomonadota")),
+                               expression("unclassified"~italic("Bacteria")),"Other")) +
+  theme(legend.position = 'bottom') 
+ggsave('endospore_dynamics/out/figure1_alt_v11.png')
+
 
 numbers <-  otutab_plots %>%
   group_by(is_ethanol_resistant, phylum) %>%
@@ -423,8 +465,8 @@ bray_boxplot
 
 
 b_time <-  ggplot(time_bray) +
-  geom_point(mapping = aes(x = date_dist, y = median, color = is_ethanol_resistant)) +
-  geom_smooth(method = 'lm', se = TRUE, alpha = .2, mapping = aes(x = date_dist, y = median, linetype = taxonomy, color = is_ethanol_resistant)) +
+  geom_point(mapping = aes(x = date_dist, y = median, color = is_ethanol_resistant), alpha = 0.5) +
+  geom_smooth(method = 'lm', se = FALSE, mapping = aes(x = date_dist, y = median, linetype = taxonomy, color = is_ethanol_resistant)) +
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Bray-Curtis dissimilarity', color = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom') +
@@ -437,7 +479,7 @@ b_time
 ggarrange(bray_boxplot + labs(tag = 'A'), 
           b_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
 
-ggsave('endospore_dynamics/out/supplement_figure1.png', dpi = 600)
+ggsave('endospore_dynamics/out/supplement_figure2.png', dpi = 600)
 
 
 ##
@@ -485,21 +527,23 @@ jaccard_corr_time
 jaccard_boxplot <- ggplot(jaccard) +
   geom_boxplot(mapping = aes(x = taxonomy, y = median_value, fill = is_ethanol_resistant)) +
   geom_line(mapping = aes(x = .25, y = .25, linetype = taxonomy)) +
-  geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = taxonomy, label = paste('p =', scientific(pvalue, digits = 0)))) + 
+  # geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = taxonomy, label = paste('p =', scientific(pvalue, digits = 0)))) + 
   scale_fill_manual(values = col) +
   labs(y = 'Jaccard distance', x = '', fill = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom', axis.ticks.x = element_blank()) +
   guides(fill = guide_legend(ncol = 4)) +
   facet_grid(~same_person) +
-  scale_x_discrete(labels = c("Bacillota" = expression(italic("Bacillota")), "Other taxa" = "Other taxa")) +
-  scale_linetype_manual(values = c("Bacillota" = "solid", "Other taxa" = "dashed"),
-                        labels = c(expression(italic("Bacillota")), "Other taxa"))
+  scale_x_discrete(labels = c("Bacillota" = expression(italic("Bacillota")), "Other" = "Other")) +
+  scale_linetype_manual(values = c("Bacillota" = "solid", "Other" = "dashed"),
+                        labels = c(expression(italic("Bacillota")), "Other"))
 jaccard_boxplot
+
 
 j_time <- time_jaccard %>%
   ggplot(aes(x = date_dist, y = median, color = is_ethanol_resistant)) +
-  geom_point() +
-  geom_smooth(method = 'lm', se = TRUE, alpha = .2, mapping = aes(linetype = taxonomy, color = is_ethanol_resistant)) +
+  geom_smooth(method = 'lm', se = FALSE, mapping = aes(linetype = taxonomy, color = is_ethanol_resistant)) +
+  geom_point(alpha = 0.5) +
+  
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Jaccard distance', color = '', linetype = 'Phylum') +
   theme(legend.position = 'bottom') +
