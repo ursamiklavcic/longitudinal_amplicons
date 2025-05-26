@@ -1,6 +1,10 @@
-Exploratory analysis of longitudinal amplicon data from 9 healthy individuals gut microbiota and sporobiota. 
+# Longitudinal dynamics of ethanol-resistant microbes and sporulation in the human gut 
 
-In the folder /code you can find all necessary code to reproduce figures and results from article: ** Longitudinal dynamics of ethanol-resistant microbes and sporualtion in the human gut **
-Processed data is availabile in folder data/r_data/ 
+Exploratory analysis of longitudinal amplicon data from 9 healthy individuals gut microbiota and sporobiota. 
+---
+
+In the folder `code/` you can find all necessary code to reproduce figures and results from article: **Longitudinal dynamics of ethanol-resistant microbes and sporualtion in the human gut**
+
+Processed data is availabile in folder `data/r_data/` 
 
 ✨Link to the articles publication✨
