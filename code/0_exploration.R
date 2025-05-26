@@ -1,5 +1,4 @@
-library(cli, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
-library(rlang, lib.loc = "/home/nlzoh.si/ursmik1/R/x86_64-pc-linux-gnu-library/4.1")
+
 library(tidyverse)
 library(vegan)
 library(lubridate)

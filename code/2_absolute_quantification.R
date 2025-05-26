@@ -66,23 +66,6 @@ ddPCR = rbind(plate1_m, plate2_m, plates_e, sample) %>%
 
 saveRDS(ddPCR, 'data/r_data/ddPCR.RDS')
 
-# Multiply relative abundances by CopiesPerngDNA = absolute abundance per ng DNA OR 
-# CopiesPerulSample = absolutne abundance per ul DNA in original sample
-
-otutabEM = readRDS('data/r_data/otutabEM.RDS')
-
-otutab_absrel = rownames_to_column(as.data.frame(otutabEM), 'Group') %>%
-  pivot_longer(cols = starts_with('Otu')) %>%
-  group_by(Group) %>%
-  mutate(rel_abund = value/sum(value)) %>%
-  ungroup() %>%
-  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-  mutate(norm_abund = rel_abund*copies) %>%
-  select(Group, name, value, rel_abund, norm_abund) %>%
-  filter(!is.na(norm_abund))
-
-saveRDS( otutab_absrel, 'data/r_data/otutab_absrel.RDS')
-
 # Additional experiment: Does PowerFecal kit isolate spores?
 samples = read_excel('data/absolute_quantification/PowerFecal/samples.xlsx')
 
