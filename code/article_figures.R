@@ -141,9 +141,11 @@ prevalence2 <- prevalence %>%
   reframe(mean_per_otus = median(per_otus))
 
 preval <- ggplot(prevalence, aes(x = prevalence, y=per_otus)) +
-  geom_line(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol resistant'),  aes(group=person), color= '#f0a336', linewidth=0.5, alpha=0.3) +
-  geom_line(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol non-resistant'), aes(group=person), color= '#3CB371', linewidth=0.5, alpha=0.3) +
-  geom_smooth(prevalence2, mapping =  aes(x = prevalence, y = mean_per_otus, color = is_ethanol_resistant), linewidth=1, se = FALSE) +
+  geom_line(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol resistant'),  
+            aes(group=person), color= '#f0a336', linewidth=0.9, alpha=0.3) +
+  geom_line(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol non-resistant'), 
+            aes(group=person), color= '#3CB371', linewidth=0.9, alpha=0.3) +
+  geom_smooth(prevalence2, mapping =  aes(x = prevalence, y = mean_per_otus, color = is_ethanol_resistant), linewidth=1.3, se = FALSE) +
   scale_color_manual(values = col) +
   labs(x='Within-individual prevalence\n (% of timepoints present)', y= '% OTUs') +
   theme_bw(base_size = 14) +
@@ -162,7 +164,8 @@ rel_preval
 ggarrange(tile_per, rel_preval, 
           widths = c(1, .8), ncol = , common.legend = TRUE, legend = 'bottom')
 
-ggsave('out/figures/figure1_v15.tiff', width = 210, height = , dpi = 300)
+ggsave('out/figures/figure1_v15.tiff' , dpi = 600)
+ggsave('out/figures/figure1.pdf', dpi=600)
 
 # Statisitcs, is there really more ethanol resistant OTUs present at more time-points than ethanol non-resistant 
 preval_stat <- long_fractions %>%
@@ -222,6 +225,55 @@ long_fractions %>% filter(phylum == 'Bacteroidota', is_ethanol_resistant == 'Eth
 
 
 # Figure 2 
+calculate_dist <- function(otu_data, method) {
+  dist_all <- data.frame()
+  
+  meta <- distinct(otu_data, Group, person, date, fraction, is_ethanol_resistant, taxonomy)
+  
+  # min <- otu_data %>%
+  #   group_by(Group) %>%
+  #   summarise(sum = sum(PA), .groups = 'drop') %>%
+  #   summarise(min = min(sum)-5) %>%
+  #   pull(min)
+  
+  otutab <- otu_data %>%
+    select(Group, name, value) %>%
+    pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
+    column_to_rownames('Group')
+  
+  for (i in 1:999) {
+    # Resample OTUs within each fraction
+    otutab_t <- t(otutab)
+    resampled_t <- otutab_t[sample(1:nrow(otutab_t), size = min, replace = TRUE), ]
+    resampled_otutab <- t(resampled_t)
+    
+    # Calculate distances (Bray-Curtis)
+    dist <- vegdist(resampled_otutab, method = method)
+    
+    # Tidy the Bray-Curtis matrix
+    dist_long <- as.matrix(dist) %>%
+      as_tibble(rownames = 'Group') %>%
+      pivot_longer(-Group) %>%
+      filter(Group != name)
+    
+    dist_all <- rbind(dist_all, dist_long)
+  }
+  
+  dist <- dist_all %>%
+    mutate(sample_pairs = paste(Group, name)) %>%
+    group_by(sample_pairs) %>%
+    summarise(mean_value = mean(value, na.rm = TRUE), 
+              median_value = median(value, na.rm = TRUE),
+              sd = sd(value, na.rm = TRUE), .groups = 'drop') %>%
+    ungroup() %>%
+    separate(sample_pairs, into = c("Group", "name"), sep = " ") %>%
+    left_join(meta, by = 'Group') %>%
+    left_join(meta, by = join_by('name' == 'Group', 'fraction', 'is_ethanol_resistant', 'taxonomy')) %>%
+    mutate(same_person = ifelse(person.x == person.y, 'Within individual', 'Between individuals'), 
+           date_dist = abs(date.x-date.y))
+  
+  return(dist)
+}
 # Minimal number of OTUs in a fraction 
 calculate_min <- function(otu_data) {
   min <-  otu_data %>%
@@ -230,6 +282,39 @@ calculate_min <- function(otu_data) {
     summarise(min = min(sum)) %>%
     pull(min)
 }
+
+wilcox_to_df <- function(wilcox_result, same_person_label) {
+  # Extract the matrix of p-values
+  pval <- as.data.frame(as.table(wilcox_result$p.value)) %>%
+    na.omit()
+  
+  # Rename columns for clarity
+  colnames(pval) <- c("fraction1", "fraction2", "pvalue")
+  
+  # Add the same_person column
+  pval$same_person <- same_person_label
+  
+  return(pval)
+}
+
+time_corr <- function(data) {
+  # Function to compute correlation and p-value for each subset
+  cor_function <- function(df) {
+    cor_result <- cor.test(as.numeric(df$date_dist), df$median, method = "pearson")
+    return(data.frame(corr = cor_result$estimate, p_value = cor_result$p.value))
+  }
+  
+  # Apply the cor_function for each unique fraction and store the results in a data frame
+  corr_table <- data %>%
+    group_by(fraction) %>%
+    do({
+      cor_function(.)
+    }) %>%
+    ungroup()
+  
+  return(corr_table)
+}
+
 
 etoh_bac_min <- calculate_min(etoh_bacillota) #78
 etoh_other_min <- calculate_min(etoh_other) # 24
@@ -317,7 +402,7 @@ b_time
 ggarrange(bray_boxplot + labs(tag = 'A'), 
           b_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom', ncol=2, widths = c(0.8, 1))
 
-ggsave('out/figures/supplement_figure2.png', dpi = 600)
+ggsave('out/figures/supplement_figure4.tiff', dpi = 600)
 
 ##
 # Is the difference (looking only WITHIN INDIIVIDUAL) between EtOH / non-EtOH Bacillota more pronounced than for other pyhla? 
@@ -383,7 +468,8 @@ jaccard_boxplot <- ggplot(jaccard) +
   scale_fill_manual(values = col) +
   labs(y = 'Jaccard distance', x = '', fill = '', linetype = '') +
   theme_bw(base_size = 14) +
-  theme(legend.position = 'bottom', axis.ticks.x = element_blank()) +
+  theme(legend.position = 'bottom', axis.ticks.x = element_blank(), 
+        plot.margin = unit(c(0, 0, 0, 0), "cm")) +
   guides(fill = guide_legend(ncol = 4)) +
   facet_grid(~same_person) +
   scale_x_discrete(labels = c(
@@ -401,7 +487,7 @@ j_time <- time_jaccard %>%
   scale_color_manual(values = col) +
   labs(x = 'Days between sampling', y = 'Jaccard distance', color = '', linetype = '') +
   theme_bw(base_size = 14) +
-  theme(legend.position = 'bottom') +
+  theme(legend.position = 'bottom',  plot.margin = unit(c(0, 0.3, 0, 0), "cm")) +
   scale_linetype_manual(values = c("Phylum Bacillota" = "solid", "Other phyla" = "dashed"),
                         labels = c(expression(paste("Phylum ", italic("Bacillota"))), "Other phyla"))
 j_time
@@ -411,6 +497,7 @@ ggarrange(jaccard_boxplot + labs(tag = 'A'),
           j_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
 
 ggsave('out/figures/figure2.tiff', dpi = 600)
+ggsave('out/figures/figure2.pdf', dpi = 600)
 
 # Additional test for usage of beta diveristy metrics: Is the difference we see between ethanol resistant and ethanol non-resistant only, 
 # becouse of different relative abundances of OTUs (Bacillota have higher relative abundance)
@@ -628,6 +715,7 @@ otutabME <- otutab_norm %>%
   select(name, person, day, date, mi, ei, original_sample)
 # saveRDS(otutabME, 'data/r_data/otutabME.RDS')
 
+otutabME %>% summarise(n_distinct(name))
 
 # variance of OTU host VS population 
 var_host_population <- otutabME %>%
@@ -668,25 +756,25 @@ otus <-  var_host_population %>%
   geom_vline(xintercept = 1) +
   scale_y_discrete(labels = c(
     expression(italic("Anaerostipes")~"(Otu000019)"),
-    expression(italic("Blautia")~"(Otu000013)"),
+    expression(italic("Blautia")~"(Otu000010)"),
     expression(italic("Blautia")~"(Otu000015)"),
-    expression(italic("Blautia")~"(Otu000017)"),
-    expression(italic("Blautia")~"(Otu000047)"),
-    expression("Clostridiales"~"unclassified (Otu000041)"),
-    expression(italic("Clostridium sensu stricto")~"(Otu000021)"),
-    expression(italic("Clostridium")~"(Otu000031)"),
-    expression(italic("Clostridium")~"XI (Otu000014)"),
-    expression(italic("Clostridium")~"XIVa (Otu000037)"),
-    expression(italic("Clostridium")~"XIVa (Otu000043)"),
-    expression(italic("Clostridium")~"XIVa (Otu000050)"),
-    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000002)"),
-    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000003)"),
-    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000004)"),
-    expression("Lachnospiraceae"~"unclassified (Otu000023)"),
-    expression("Lachnospiraceae"~"unclassified (Otu000028)"),
-    expression("Lachnospiraceae"~"unclassified (Otu000033)"),
-    expression(italic("Ruminococcus")~"(Otu000008)"),
-    expression(italic("Turicibacter")~"(Otu000038)"))) +
+    expression(italic("Blautia")~"(Otu000021)"),
+    expression(italic("Blautia")~"(Otu000023)"),
+    expression(italic("Clostridiales")~"unclassified (Otu000041)"),
+    expression(italic("Clostridium sensu stricto")~"(Otu000003)"),
+    expression(italic("Clostridium sensu stricto")~"(Otu000004)"),
+    expression(italic("Clostridium")~"XI (Otu000001)"),
+    expression(italic("Clostridium")~"XI (Otu000007)"),
+    expression(italic("Clostridium")~"XI (Otu000009)"),
+    expression(italic("Clostridium")~"XIVa (Otu000055)"),
+    expression(italic("Clostridium")~"XIVa (Otu000074)"),
+    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000025)"),
+    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000031)"),
+    expression(italic("Lachnospiraceae incertae sedis")~"(Otu000044)"),
+    expression(italic("Lachnospiraceae")~"unclassified (Otu000027)"),
+    expression(italic("Lachnospiraceae")~"unclassified (Otu000059)"),
+    expression(italic("Lachnospiraceae")~"unclassified (Otu000082)"),
+    expression(italic("Turicibacter")~"(Otu000008)"))) +
   scale_fill_manual(values = otu_colors1) +
   labs(y = '', x= expression(frac("Individual-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]",
                                   "Population-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]"))) +
@@ -720,7 +808,8 @@ time <- otutabME %>%
   facet_wrap(~person) +
   scale_y_log10() +
   labs(x = 'Day', y = expression("Sporulation frequency [log("*e [i]*"/"*m [i]*")]")) +
-  facet_wrap(~person, scales = 'free')
+  facet_wrap(~person, scales = 'free') +
+  theme(plot.margin = unit(c(0, 0.3, 0, 0), "cm"))
 time
 ggsave('out/figures/logmiei_person_time.tiff', dpi = 600)
 
@@ -740,7 +829,8 @@ host_population
 
 ggarrange(time + labs(tag = 'A')+theme(basze_size =12), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 0.8))
-ggsave('out/figures/varhost_varpopulation_all_v14.tiff', dpi=600)
+ggsave('out/figures/figure3_v15.tiff', dpi=600)
+ggsave('out/figures/figure3.pdf', dpi = 600)
 
 # Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
 kruskal.test(var_person/var_population ~ person, data = var_host_population)
