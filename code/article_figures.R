@@ -63,7 +63,8 @@ tile <- long %>%
   complete(is_ethanol_resistant, Phylum, fill = list(no_otus = 0)) %>%
   ggplot(aes(y = Phylum, x = is_ethanol_resistant)) +
   geom_tile(color = 'black', fill = 'white') +
-  geom_text(aes(label = ifelse(no_otus > 1, no_otus, '')), size = 4) +
+  geom_text(aes(label = no_otus), size = 4) +
+                  #ifelse(no_otus > 1, no_otus, '')), size = 4) +
   scale_y_discrete(labels = c(
     expression("unclassified " * italic("Bacteria")), 
     expression(italic("Verrucomicrobiota")),
@@ -76,7 +77,7 @@ tile <- long %>%
     expression(italic("Bacteroidota")),
     expression(italic("Bacillota")))) +
   scale_x_discrete(labels = c('Ethanol\n non-resistant', 'Ethanol-resistant')) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 13) +
   labs(x = '', y = '', fill = '') +
   theme(plot.margin = unit(c(t = 0, r = 0, b = 0, l = 0), "cm"), 
         panel.grid.major = element_blank())
@@ -113,7 +114,7 @@ rel <- long_fractions %>%
   scale_x_discrete(labels = c('Ethanol\n non-resistant', 'Ethanol-resistant')) +
   labs(x = '', y = 'log10(relative abundance)') +
   theme_bw(base_size = 14) +
-  theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0, 0.1), "cm"))
+  theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
 rel
 
 # Third plot % OTUs on y, x 0 prevalence % 
@@ -146,21 +147,22 @@ preval <- ggplot(prevalence, aes(x = prevalence, y=per_otus)) +
   scale_color_manual(values = col) +
   labs(x='Within-individual prevalence\n (% of timepoints present)', y= '% OTUs') +
   theme_bw(base_size = 14) +
-  theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0.1, 0.1), "cm"))
+  theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0.1, 0), "cm"))
 preval
 
 
-tile_per <- (tile + labs(tag = 'A') + per) + plot_layout(ncol = 2, widths = c(.9, 1), axes = "collect") 
+tile_per <- ggarrange(tile + labs(tag = 'A'), per, widths = c(.9, 1), 
+                      ncol =2, common.legend = TRUE, legend = 'bottom')
 tile_per
 
-rel_preval <- ggarrange(rel + labs(tag ='B'), preval + labs(tag= 'C'), 
-                        ncol = 1, heights = c(.8, 1), align = 'v')  
+rel_preval <- ggarrange(rel + labs(tag = 'B'), preval + labs(tag = 'C'),
+                        ncol = 1, heights = c(.8, 1), legend = 'none', align = 'v')
 rel_preval
 
 ggarrange(tile_per, rel_preval, 
-          widths = c(1, .8), ncol = 2, common.legend = TRUE, legend = 'bottom')
+          widths = c(1, .8), ncol = , common.legend = TRUE, legend = 'bottom')
 
-ggsave('out/figures/figure1_v14.tiff', dpi = 600)
+ggsave('out/figures/figure1_v15.tiff', width = 210, height = , dpi = 300)
 
 # Statisitcs, is there really more ethanol resistant OTUs present at more time-points than ethanol non-resistant 
 preval_stat <- long_fractions %>%
@@ -174,6 +176,9 @@ preval_stat <- long_fractions %>%
 
 
 wilcox.test(timepoints_present ~ is_ethanol_resistant, data = preval_stat) # YES
+
+long_fractions %>% filter(phylum == 'Bacteroidota', is_ethanol_resistant == 'Ethanol resistant') %>% 
+  summarise(sum = sum(rel_abund))
 
 # # Alternative figure 1 
 # abundance <- otutab_plots %>%
