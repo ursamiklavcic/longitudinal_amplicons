@@ -1,4 +1,4 @@
----
+
 To recrate figures from the manuscript: **Longitudinal dynamics of ethanol-resistant microbes and sporulation in the human gut**
 --- 
 RUN (*in this order*): 
