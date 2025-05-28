@@ -679,7 +679,7 @@ otutab_norm %>%
 ggsave('out/figures/supplementary6.tiff', dpi=600)
 
 
-# Figure out if mi/ei is correlated: 
+# Figure out if ei/mi is correlated: 
 # a) within a person ? 
 # b) with time in a person? 
 # c) across hosts but in OTU 
@@ -721,9 +721,9 @@ otutabME %>% summarise(n_distinct(name))
 var_host_population <- otutabME %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(name) %>%
-  summarise(var_population = var(log(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_population = var(log(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
   left_join(otutabME %>% group_by(person, name) %>%
-              summarise(var_person = var(log(mi/ei), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
+              summarise(var_person = var(log(ei/mi), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
   left_join(taxtab, by = 'name') %>%
   filter(!(Genus %in% c('Roseburia', 'Streptococcus'))) %>%
   mutate(genus2 = paste(str_replace_all(Genus, "_", " "), '(',name,')')) 
@@ -741,8 +741,8 @@ individual <- ggplot(var_host_population, aes(x = person, y = var_person/var_pop
   geom_boxplot() +
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   geom_hline(yintercept = 1) +
-  labs(x = 'Individuals', y = expression(frac("Individual-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]",
-                                              "Population-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]"))) +
+  labs(x = 'Individuals', y = expression(frac("Individual-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]",
+                                              "Population-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]"))) +
   scale_x_discrete(limits=rev) +
   coord_flip()
 individual
@@ -776,37 +776,37 @@ otus <-  var_host_population %>%
     expression(italic("Lachnospiraceae")~"unclassified (Otu000082)"),
     expression(italic("Turicibacter")~"(Otu000008)"))) +
   scale_fill_manual(values = otu_colors1) +
-  labs(y = '', x= expression(frac("Individual-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]",
-                                  "Population-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]"))) +
+  labs(y = '', x= expression(frac("Individual-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]",
+                                  "Population-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]"))) +
   theme(legend.position = 'none') 
 otus
 ggsave('out/figures/varPersonPopulation_otu.tiff', dpi = 600)
 
 
-# # Normalize the time value, by mean value if mi/ei for each OTU
+# # Normalize the time value, by mean value if ei/mi for each OTU
 # days <- otutabME %>%
 #   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
 #   group_by(person, name) %>%
-#   mutate(mean = mean(mi/ei, na.rm = TRUE)) %>%
+#   mutate(mean = mean(ei/mi, na.rm = TRUE)) %>%
 #   ungroup() %>%
-#   ggplot(aes(x = day, y = (mi/ei)/mean)) +
+#   ggplot(aes(x = day, y = (ei/mi)/mean)) +
 #   geom_point() +
 #   geom_line(aes(color = name), show.legend = FALSE) +
 #   facet_wrap(~person) +
 #   scale_y_log10() +
-#   labs(x = 'Day', y = 'log10(mi/ei) / mean(log10(mi/ei))', color = '')
+#   labs(x = 'Day', y = 'log10(ei/mi) / mean(log10(ei/mi))', color = '')
 # days
 # ggsave('out/mini_days_person.png', dpi=600)
 
 # Without normalization of sporulation frequency 
 time <- otutabME %>%
-  ggplot(aes(x = day, y = mi/ei)) +
+  ggplot(aes(x = day, y = ei/mi)) +
   geom_point() +
   geom_line(linewidth = 1, aes(color = name), show.legend = FALSE) +
   scale_color_manual(values = otu_colors2) +
   facet_wrap(~person) +
   scale_y_log10() +
-  labs(x = 'Day', y = expression("Sporulation frequency [log("*m [i]*"/"*e [i]*")]")) +
+  labs(x = 'Day', y = expression("Sporulation frequency [log("*e [i]*"/"*m [i]*")]")) +
   facet_wrap(~person, scales = 'free') +
   theme(plot.margin = unit(c(0, 0.3, 0, 0), "cm"))
 time
@@ -814,15 +814,15 @@ ggsave('out/figures/logmiei_person_time.tiff', dpi = 600)
 
 # otutabME %>%
 #   left_join(taxtab, by = 'name') %>%
-#   ggplot(aes(x = day, y = mi/ei)) +
+#   ggplot(aes(x = day, y = ei/mi)) +
 #   geom_line(aes(color = Genus, group = name), linewidth=1.5) +
 #   facet_wrap(~person) +
 #   scale_y_log10() +
-#   labs(x = 'Day', y = expression(log(m[i] / e[i]))) +
+#   labs(x = 'Day', y = expression(log(e[i] / m[i]))) +
 #   facet_wrap(~person, scales = 'free')
 # ggsave('out/time_by_otu_byGenus.png')
 # All plots figure 3
-host_population <- ggarrange(otus + labs(tag = 'B') +theme(base_size =12), individual + labs(tag = 'C')+theme(basze_size =12), 
+host_population <- ggarrange(otus + labs(tag = 'B') +theme(base_size =12), individual + labs(tag = 'C')+theme(base_size =12), 
                              common.legend = FALSE, legend = 'right', widths = c(1,.7))
 host_population
 
@@ -831,7 +831,7 @@ ggarrange(time + labs(tag = 'A')+theme(basze_size =12), host_population, common.
 ggsave('out/figures/figure3_v15.tiff', dpi=600)
 ggsave('out/figures/figure3.pdf', dpi = 600)
 
-# Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (mi/ei) for individual and OTUs
+# Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (ei/mi) for individual and OTUs
 kruskal.test(var_person/var_population ~ person, data = var_host_population)
 
 # Pairwise comparison 
@@ -853,27 +853,27 @@ pairwise.wilcox.test(var_host_population$var_person / var_host_population$var_po
 var_host_population %>%
   ggplot(aes(x = var_person/var_population)) +
   geom_density() +
-  labs(x = 'Individual variance of log(mi/ei) / Population variance of log (mi/ei)', y = 'Density')
+  labs(x = 'Individual variance of log(ei/mi) / Population variance of log (ei/mi)', y = 'Density')
 ggsave('out/varPersonPopulation_density.png', dpi = 600)
 
 
 # Are OTUs correlated across days in a given host
 otutabME %>% 
-  ggplot(aes(x = day, y = log10(mi/ei), color = name)) +
+  ggplot(aes(x = day, y = log10(ei/mi), color = name)) +
   geom_line(show.legend = FALSE) +
   facet_grid(~person, scales = 'free')
 
 otutabME %>%
   #filter(name %in% top5_etoh$name) %>%
-  ggplot(aes(x = day, y = mi/ei, color = name)) +
+  ggplot(aes(x = day, y = ei/mi, color = name)) +
   geom_point(show.legend = FALSE) +
   scale_y_log10() +
   facet_grid(name~person)
-ggsave('out/miei_otus.png', width = 30, height = 60, units = 'cm', dpi = 600)
+ggsave('out/figures/miei_otus.png', width = 30, height = 60, units = 'cm', dpi = 600)
 
 otutabME %>%
   left_join(select(filter(metadata, biota == 'Microbiota'), original_sample, time_point), by = 'original_sample') %>%
-  ggplot(aes(x = mi/ei, color = as.factor(time_point))) +
+  ggplot(aes(x = ei/mi, color = as.factor(time_point))) +
   geom_density(linewidth = 1) +
   scale_x_log10() +
   facet_wrap(~person) +
@@ -890,7 +890,7 @@ base <- otutabME %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   # variance of all OTUs in a day
   group_by(person, day) %>%
-  summarise(var_day = var(log10(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
   # avergae variance of OTUs across days 
   group_by(person) %>%
   mutate(mean_var_day = mean(var_day)) %>%
@@ -906,7 +906,7 @@ otutabME_shuffled <- otutabME %>%
 shuffled <- otutabME_shuffled %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(person, day) %>%
-  summarise(var_day = var(log10(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
   group_by(person) %>%
   mutate(mean_var_day = mean(var_day)) %>%
   ungroup()
@@ -923,7 +923,7 @@ base_shuffled %>%
   geom_abline() +
   annotate('text', x= 0.6, y = 1.5, label = paste("Pearson's correlation:", round(base_shuffled_res$estimate, digits = 3), '\n', 
                                                   "p-value =", round(base_shuffled_res$p.value, digits = 2))) +
-  labs(x = 'Individuals variance of log(mi/ni) in a day / Mean individuals variance of log(mi/ni)', y= 'Reshuffled individuals variance of log(mi/ei) in a day / Mean individuals variance of log(mi/ei)') 
+  labs(x = 'Individuals variance of log(ei/mi) in a day / Mean individuals variance of log(ei/mi)', y= 'Reshuffled individuals variance of log(ei/mi) in a day / Mean individuals variance of log(ei/mi)') 
 ggsave('out/statistics_variance_days.png', dpi = 600)
 
 
@@ -946,7 +946,7 @@ ggsave('out/statistics_variance_days.png', dpi = 600)
 # Are OTU mi/ni values correlated across days ?
 time_stat <- otutabME %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
-  mutate(x = log10(mi/ei)) %>%
+  mutate(x = log10(ei/mi)) %>%
   group_by(person, name) %>%
   mutate(mean = mean(x, na.rm = TRUE)) %>%
   ungroup() %>%
@@ -963,7 +963,7 @@ ggsave('out/heatmap_all.png', width = 20, height = 18, units = 'cm', dpi=600)
 # Is the variation in time we observe driven by typical variance across OTUs in a host? /in a population ? 
 person_mean = otutabME %>%
   group_by(person, name) %>%
-  summarise(mean = mean(log10(mi/ei)), .groups = 'drop') %>%
+  summarise(mean = mean(log10(ei/mi)), .groups = 'drop') %>%
   filter(!is.infinite(mean) & !is.na(mean)) %>%
   group_by(person) %>%
   summarise(var = var(mean), .groups = 'drop') 
@@ -971,7 +971,7 @@ person_mean = otutabME %>%
 otu_time = otutabME %>%
   filter(is.finite(log10(mi)) & is.finite(log10(ei))) %>%
   group_by(person, day) %>%
-  summarise(var_day = var(log10(mi/ei), na.rm = TRUE), .groups = 'drop') %>%
+  summarise(var_day = var(log10(ei/mi), na.rm = TRUE), .groups = 'drop') %>%
   left_join(person_mean, by = 'person')
 
 ggplot(otu_time, aes(x = day, y = var_day, color = person)) +
@@ -995,7 +995,7 @@ results = data.frame()
 for (p in unique(otutabME$person)) {
   xtab = otutabME %>% 
     filter(person == p) %>%
-    mutate(x = mi/ei) %>%
+    mutate(x = ei/mi) %>%
     select(name, x, original_sample) %>%
     pivot_wider(names_from = 'name', values_from = 'x', values_fill = 0) %>%
     column_to_rownames('original_sample')
@@ -1021,56 +1021,17 @@ ggsave('out/figures/heatmap_byperson.png', height = 20, width = 20, units = 'cm'
 # is there any correlation between sporulation frequency and relative abundance of the OTU? 
 rel_freq <- otutabME %>%
   left_join(select(otu_long, name, person, date, original_sample, rel_abund), by = c('name', 'person', 'date', 'original_sample')) %>%
-  mutate(sporulation_frequency = mi/ei)
+  mutate(sporulation_frequency = ei/mi)
 rf_cor <- cor.test(rel_freq$rel_abund, rel_freq$sporulation_frequency, method = 'pearson')
 
 rel_freq %>%
-  ggplot(aes(x = rel_abund, y = mi/ei)) +
+  ggplot(aes(x = rel_abund, y = ei/mi)) +
   geom_point(size=3) +
   scale_x_log10() +
   scale_y_log10() +
   geom_abline(intercept = 1) +
-  annotate('text', x = 1, y = 1e7, label = paste('cor:', round(rf_cor$estimate, digits = 3) ,'\n', 'p=', round(rf_cor$p.value, digits=3))) +
-  labs(x = 'Relative abundance', y = 'Sporulation frequency mi/ei')
+  annotate('text', x = 1, y = 1e7, label = paste('cor:', round(rf_cor$estimate, digits = 6) ,'\n', 'p=', round(rf_cor$p.value, digits=6))) +
+  labs(x = 'Relative abundance', y = 'Sporulation frequency ei/mi')
 ggsave('out/sporulation_frequency_relative_abundance_corr.png', dpi=600)
-
-# Correlation betwen higher/lower sporulation frequency and certain OTU abundance / familiy/genus ? 
-miei <- otutabME %>%
-  mutate(mi_ei = mi/ei) %>%
-  group_by(person, date) %>%
-  summarise(mean_miei= mean(mi_ei))
-
-mean <- otu_long %>%
-  group_by(person, date, Family) %>%
-  summarise(mean_rel = mean(rel_abund))
-
-both <- otu_long %>% left_join(otutabME, by = c('person', 'date') )
-
-cor.test(both$mean_miei, both$rel_abund)
-cor.test(both$mean_miei, both$norm_abund)
-
-aov(mean_miei ~ Family, data = both)
-aov(mean_miei ~ Genus, data = both)
-
-otu_long %>%
-  filter(!(name %in% otutabME$name)) %>%
-  group_by(person, date, Family) %>%
-  reframe(rel = mean(rel_abund)) %>%
-  ggplot(aes(x = date, y = rel, color = Family)) +
-  geom_line() +
-  scale_y_log10() +
-  facet_wrap(~person)
-
-otu_long %>%
-  group_by(person, date, Family, Phylum) %>%
-  reframe(rel = mean(rel_abund)) %>%
-  left_join(miei, by = c('person', 'date')) %>%
-  ggplot(aes(x = rel, y = mean_miei, color = Family)) +
-  geom_point() +
-  geom_smooth(method = 'lm') +
-  scale_x_log10() +
-  stat_cor(method = 'pearson') +
-  facet_wrap(~Phylum, ncol = 10, scales = 'free')
-
 
 
