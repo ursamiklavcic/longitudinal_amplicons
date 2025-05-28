@@ -741,8 +741,8 @@ individual <- ggplot(var_host_population, aes(x = person, y = var_person/var_pop
   geom_boxplot() +
   #geom_jitter(aes(color = name), size = 2, show.legend = FALSE) +
   geom_hline(yintercept = 1) +
-  labs(x = 'Individuals', y = expression(frac("Individual-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]",
-                                              "Population-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]"))) +
+  labs(x = 'Individuals', y = expression(frac("Individual-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]",
+                                              "Population-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]"))) +
   scale_x_discrete(limits=rev) +
   coord_flip()
 individual
@@ -776,8 +776,8 @@ otus <-  var_host_population %>%
     expression(italic("Lachnospiraceae")~"unclassified (Otu000082)"),
     expression(italic("Turicibacter")~"(Otu000008)"))) +
   scale_fill_manual(values = otu_colors1) +
-  labs(y = '', x= expression(frac("Individual-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]",
-                                  "Population-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]"))) +
+  labs(y = '', x= expression(frac("Individual-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]",
+                                  "Population-variance of sporulation frequency [log("*m [i]*"/"*e [i]*")]"))) +
   theme(legend.position = 'none') 
 otus
 ggsave('out/figures/varPersonPopulation_otu.tiff', dpi = 600)
@@ -802,12 +802,11 @@ ggsave('out/figures/varPersonPopulation_otu.tiff', dpi = 600)
 time <- otutabME %>%
   ggplot(aes(x = day, y = mi/ei)) +
   geom_point() +
-  geom_line(linewidth = 1, aes(color = name), show.legend = FALSE
-            ) +
+  geom_line(linewidth = 1, aes(color = name), show.legend = FALSE) +
   scale_color_manual(values = otu_colors2) +
   facet_wrap(~person) +
   scale_y_log10() +
-  labs(x = 'Day', y = expression("Sporulation frequency [log("*e [i]*"/"*m [i]*")]")) +
+  labs(x = 'Day', y = expression("Sporulation frequency [log("*m [i]*"/"*e [i]*")]")) +
   facet_wrap(~person, scales = 'free') +
   theme(plot.margin = unit(c(0, 0.3, 0, 0), "cm"))
 time
@@ -823,7 +822,7 @@ ggsave('out/figures/logmiei_person_time.tiff', dpi = 600)
 #   facet_wrap(~person, scales = 'free')
 # ggsave('out/time_by_otu_byGenus.png')
 # All plots figure 3
-host_population <- ggarrange(otus + labs(tag = 'B') +theme(basze_size =12), individual + labs(tag = 'C')+theme(basze_size =12), 
+host_population <- ggarrange(otus + labs(tag = 'B') +theme(base_size =12), individual + labs(tag = 'C')+theme(basze_size =12), 
                              common.legend = FALSE, legend = 'right', widths = c(1,.7))
 host_population
 
@@ -1017,7 +1016,7 @@ ggplot(results, aes(x = name, y = name2, fill = value)) +
         axis.text.y = element_text(size = 6)) +
   labs( x = '', y = '') +
   facet_wrap(~person, nrow = 3, scales = 'free')
-ggsave('out/heatmap_byperson.png', height = 20, width = 20, units = 'cm', dpi=600)
+ggsave('out/figures/heatmap_byperson.png', height = 20, width = 20, units = 'cm', dpi=600)
 
 # is there any correlation between sporulation frequency and relative abundance of the OTU? 
 rel_freq <- otutabME %>%
