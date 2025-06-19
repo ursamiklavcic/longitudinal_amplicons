@@ -30,8 +30,6 @@ ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 # seq_taxtab <- readRDS('data/r_data/seq_taxtab.RDS')
 # tree <- readRDS('data/r_data/tree.RDS')
 
-set.seed(96)
-theme_set(theme_bw())
 
 # Define ethanol resistant OTUs and seqs! 
 otu_long <- rownames_to_column(as.data.frame(otutabEM), 'Group') %>% 
