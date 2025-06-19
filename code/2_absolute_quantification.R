@@ -78,12 +78,16 @@ pf$sample_description = factor(pf$sample_description, levels = c('negative contr
 
 # Present only the ones important for correlation! 
 pf_cor <- filter(pf, sample_description %in% c('fecal sample + 10e-4 spores', 'fecal sample + 10e-3 spores', 
-                                           'fecal sample + 10e-1 spores', 'fecal sample with undiluted spores'))
+                                           'fecal sample + 10e-1 spores', 'fecal sample with undiluted spores')) %>% 
+  mutate(sample_description = substr(sample_description, 16, 37), 
+         sample_description = str_remove(sample_description, " spores"), 
+         sample_description = ifelse(sample_description == 'th undiluted', 'undiluted', sample_description))
+pf_cor$sample_description = factor(pf_cor$sample_description, levels = c('undiluted', '10e-1', '10e-3', '10e-4'))
 cor_pf <- cor.test(pf_cor$Concentration, pf_cor$sporeCFU, method = 'pearson')
 
 pf_cor %>%
   ggplot(aes(x = sporeCFU, y = abs_conc, color = sample_description )) +
-  geom_point(size = 3) +
+  geom_point(size = 4) +
   geom_abline() +
   annotate('text', x= 1e7, y = 1e9, 
            label = paste("Pearson's correlation:", round(cor_pf$estimate, digits =2), '\n', 
@@ -91,8 +95,8 @@ pf_cor %>%
   scale_x_continuous(trans = log_trans(), breaks = c(0, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11)) +
   scale_y_continuous(trans = log_trans(), breaks = c(0, 1, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10)) +
   labs(x = expression(italic("C. difficile") * " spores CFU/ml"), 
-       y = expression("Copies of " * italic("C. difficile") * " 16S rRNA/ml"), color = 'Sample')
+       y = expression("Copies of " * italic("C. difficile") * " 16S rRNA/ml"), color = 'Dilution factor')
 ggsave('out/exploration/PowerFecal_spores.png', dpi = 600)
-
+ggsave('out/figures/PowerFecal_spores.png', dpi=600)
 
 
