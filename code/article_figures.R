@@ -10,6 +10,7 @@ library(stringr)
 library(lubridate)
 library(tibble)
 library(ggpubr)
+library(vegan)
 
 # Theme + colors 
 set.seed(96)
@@ -464,7 +465,7 @@ jaccard_corr_time
 jaccard_boxplot <- ggplot(jaccard) +
   geom_boxplot(mapping = aes(x = taxonomy, y = median_value, fill = is_ethanol_resistant)) +
   geom_line(mapping = aes(x = .25, y = .25, linetype = taxonomy)) +
-  geom_text(data = wilcox_bray, mapping = aes(y = .05, x = taxonomy, label = ifelse(pvalue < 0.01, '***', ''))) + 
+  geom_text(data = wilcox_jaccard, mapping = aes(y = .05, x = taxonomy, label = ifelse(pvalue < 0.01, '***', ''))) + 
   scale_fill_manual(values = col) +
   labs(y = 'Jaccard distance', x = '', fill = '', linetype = '') +
   theme_bw(base_size = 14) +
@@ -496,7 +497,7 @@ j_time
 ggarrange(jaccard_boxplot + labs(tag = 'A'), 
           j_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
 
-ggsave('out/figures/figure2.tiff', dpi = 600)
+ggsave('out/figures/figure2.png', dpi = 600)
 ggsave('out/figures/figure2.pdf', dpi = 600)
 
 # Additional test for usage of beta diveristy metrics: Is the difference we see between ethanol resistant and ethanol non-resistant only, 
@@ -517,7 +518,6 @@ ggsave('out/figures/supplement_figure8.png', dpi = 600)
 
 ggplot(sf, aes(x = log10(mean_rel_abund), y = log10(sumsq_diff_abund), color = fraction)) +
   geom_point() +
-  scale_color_manual(values = col4) +
   labs(x = 'Mean relative abundance of OTU', y = 'Sum of squared differences between realtive abudnances \n of an OTU in different samples', color = '') 
 ggsave('out/figures/supplement_figure8_fractions1.png', dpi = 600)
 
@@ -608,7 +608,7 @@ otu_colors2 <- c(
     "Otu000041" = "#c6dbef"
   )
 
-sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & phylum == 'Bacillota') %>%
+sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
   pull(unique(name))
 
 otutab_norm <- otu_long %>%
@@ -639,6 +639,8 @@ for (i in unique(otutab_norm$person)) {
 
 results
 
+library(scales)
+
 otutab_norm %>% 
   filter(name %in% sporeformers_list) %>%
   ggplot(aes(x = rel_abund.x, y = rel_abund.y)) +
@@ -649,7 +651,7 @@ otutab_norm %>%
   scale_x_log10() +
   facet_wrap(~person, ncol = 3) +
   labs(x = 'Relative abundance in bulk microbiota sample', y = 'Relative abundance in ethanol resistant sample' )
-ggsave('out/figures/supplementary5.tiff', dpi=600)
+ggsave('out/figures/supplementary5.png', dpi=600)
 
 # Normalized abundances 
 cor_results <- data.frame() 
@@ -676,7 +678,7 @@ otutab_norm %>%
   scale_x_log10() +
   facet_wrap(~person, ncol = 3) +
   labs(x = 'Normalized abundance in ethanol resistant sample', y = 'Normalized abundance in bulk microbiota sample' )
-ggsave('out/figures/supplementary6.tiff', dpi=600)
+ggsave('out/figures/supplementary6.png', dpi=600)
 
 
 # Figure out if ei/mi is correlated: 
@@ -828,7 +830,7 @@ host_population
 
 ggarrange(time + labs(tag = 'A')+theme(basze_size =12), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 0.8))
-ggsave('out/figures/figure3_v15.tiff', dpi=600)
+ggsave('out/figures/figure3.png', dpi=600)
 ggsave('out/figures/figure3.pdf', dpi = 600)
 
 # Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (ei/mi) for individual and OTUs
