@@ -550,6 +550,8 @@ otu_colors1 <- c(
   
   # Turicibacter – orange
   "Turicibacter ( Otu000008 )" = "#eed27e",
+  # Roseburia 
+  "Roseburia ( Otu000036 )" = "#F527F2",
   
   # Anaerostipes – purple
   "Anaerostipes ( Otu000019 )" = "#e377c2",
@@ -591,6 +593,9 @@ otu_colors2 <- c(
     # Turicibacter – orange
     "Otu000008" = "#eed27e",
     
+    # Roseburia
+    "Otu000036" = "#F527F2",
+    
     # Anaerostipes – purple
     "Otu000019" = "#e377c2",
     
@@ -608,7 +613,7 @@ otu_colors2 <- c(
     "Otu000041" = "#c6dbef"
   )
 
-sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
+sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
   pull(unique(name))
 
 otutab_norm <- otu_long %>%
@@ -714,6 +719,7 @@ otu_80 = intersect(otu_alwaysM, otu_alwaysS)
 otutabME <- otutab_norm %>%
   filter(name %in% sporeformers_list & name %in% otu_80 ) %>%
   filter(!is.na(mi) & !is.na(ei)) %>%
+  filter(Genus != 'Streptococcus') %>% 
   select(name, person, day, date, mi, ei, original_sample)
 # saveRDS(otutabME, 'data/r_data/otutabME.RDS')
 
@@ -727,7 +733,6 @@ var_host_population <- otutabME %>%
   left_join(otutabME %>% group_by(person, name) %>%
               summarise(var_person = var(log(ei/mi), na.rm = TRUE), .groups = 'drop'), by = 'name') %>%
   left_join(taxtab, by = 'name') %>%
-  filter(!(Genus %in% c('Roseburia', 'Streptococcus'))) %>%
   mutate(genus2 = paste(str_replace_all(Genus, "_", " "), '(',name,')')) 
 
 person_order <- var_host_population %>%
@@ -776,6 +781,7 @@ otus <-  var_host_population %>%
     expression(italic("Lachnospiraceae")~"unclassified (Otu000027)"),
     expression(italic("Lachnospiraceae")~"unclassified (Otu000059)"),
     expression(italic("Lachnospiraceae")~"unclassified (Otu000082)"),
+    expression(italic("Roseburia")~"(Otu000036)"),
     expression(italic("Turicibacter")~"(Otu000008)"))) +
   scale_fill_manual(values = otu_colors1) +
   labs(y = '', x= expression(frac("Individual-variance of sporulation frequency [log("*e [i]*"/"*m [i]*")]",
