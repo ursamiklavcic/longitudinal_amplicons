@@ -11,8 +11,10 @@ library(vegan)
 library(stringr)
 library(lubridate)
 library(readxl)
+library(ggplot2)
 
 set.seed(96)
+theme_set(theme_bw(base_size = 14))
 
 # Exploration
 shared = read_tsv('data/mothur/final.opti_mcc.shared') %>%
@@ -51,13 +53,27 @@ saveRDS(otutabEM, 'data/r_data/otutabEM.RDS')
 otu_names = as.data.frame(otutabEM) %>% colnames() 
 
 # Import taxonomy table
-taxtab = read_tsv('data/mothur/final.opti_mcc.0.03.cons.taxonomy') %>%
+taxtab <- read_tsv('data/mothur/final.opti_mcc.0.03.cons.taxonomy') %>%
   filter(OTU %in% otu_names) %>%
   select(name = "OTU", taxonomy = "Taxonomy") %>%
   mutate(taxonomy = str_replace_all(taxonomy, "\\\\|\\\"|\\(\\d+\\)", ""),
          taxonomy = str_replace(taxonomy, ";$", "")) %>%
   separate(taxonomy, into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus"),
-           sep=";") 
+           sep=";") %>% 
+  mutate(Phylum = case_when(
+    Phylum == 'Firmicutes' ~ 'Bacillota',
+    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
+    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
+    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
+    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
+    Phylum == 'Verrucomicrobia' ~ 'Verrucomicrobiota',
+    Phylum == 'Tenericutes' ~ 'Mycoplasmatota',
+    Phylum == 'Fusobacteria' ~ 'Fusobacteriota',
+    Phylum == 'Lentisphaerae' ~ 'Lentisphaerota',
+    Phylum == 'Synergistetes' ~ 'Synergistota',
+    Phylum == 'TM7' ~ 'Saccharibacteria',
+    Phylum == 'Deferribacteres' ~ 'Deferribacterota',
+    TRUE ~ Phylum )) 
 
 saveRDS(taxtab, 'data/r_data/taxtab.RDS')
 

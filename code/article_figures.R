@@ -3,7 +3,6 @@
 # Nessesary libraries
 library(dplyr)
 library(ggplot2)
-library(readxl)
 library(tidyr)
 library(readr)
 library(stringr)
@@ -14,7 +13,7 @@ library(vegan)
 
 # Theme + colors 
 set.seed(96)
-theme_set(theme_bw(base_size = 12))
+theme_set(theme_bw(base_size = 14))
 
 col <- c('#3CB371', '#f0a336')
 col4 <- c('#f0a336', '#3CB371', '#f35020', '#4a869c')
@@ -23,51 +22,34 @@ col4 <- c('#f0a336', '#3CB371', '#f35020', '#4a869c')
 
 otutab <- readRDS('data/r_data/otutabEM.RDS') 
 metadata <- readRDS('data/r_data/metadata.RDS')
-taxatb <- readRDS('data/r_data/taxtab.RDS')
-otu_long <- readRDS('data/r_data/otu_long.RDS')
-
-long_fractions <- readRDS('data/r_data/long_fractions.RDS')
-
-otutabME <- readRDS('data/r_data/otutabME.RDS')
+taxtab <- readRDS('data/r_data/taxtab.RDS')
+ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
 # Figure 1 
-long <- long_fractions %>%
-  mutate(Phylum = case_when(
-    Phylum == 'Firmicutes' ~ 'Bacillota',
-    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
-    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
-    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
-    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
-    Phylum == 'Fusobacteria' ~ 'Fusobacterium',
-    Phylum == 'Lentisphaerae' ~ 'Lentisphaerota',
-    Phylum == 'Synergistetes' ~ 'Synergistota',
-    Phylum == 'Tenericutes' ~ 'Mycoplasmatota',
-    Phylum == 'TM7' ~ 'Saccharibacteria',
-    Phylum == 'Verrucomicrobia' ~ 'Verrucomicrobiota',
-    Phylum == 'Deferribacteres' ~ 'Deferribacterota',
-    TRUE ~ Phylum )) %>%
-  filter(!(Phylum %in% c('Deferribacterota', 'Synergistota'))) %>%
+long <- readRDS('data/r_data/long_all.RDS') %>%
+  #filter(!(Phylum %in% c('Deferribacterota', 'Synergistota'))) %>%
   mutate(is_ethanol_resistant = ifelse(is_ethanol_resistant == 'Ethanol resistant',
                                        'Ethanol-resistant', 'Ethanol non-resistant'))
 
 unique(long$Phylum)
 
-long$Phylum <- factor(long$Phylum, levels = c('unclassified Bacteria', 'Verrucomicrobiota','Saccharibacteria',
-                                              'Mycoplasmatota', 'Lentisphaerota', 'Fusobacterium',
-                                              'Pseudomonadota', 'Actinomycetota','Bacteroidota',  
+long$Phylum <- factor(long$Phylum, levels = c('unclassified Bacteria', 'Deferribacterota', 'Synergistota', 'Verrucomicrobiota','Saccharibacteria',
+                                              'Mycoplasmatota', 'Lentisphaerota', 'Fusobacteriota',
+                                              'Pseudomonadota', 'Actinomycetota','Bacteroidota',
                                               'Bacillota'))
 
 tile <- long %>%
   group_by(is_ethanol_resistant, Phylum) %>%
   reframe(no_otus = n_distinct(name)) %>% 
-  #filter(no_otus > 1) %>%
   complete(is_ethanol_resistant, Phylum, fill = list(no_otus = 0)) %>%
   ggplot(aes(y = Phylum, x = is_ethanol_resistant)) +
   geom_tile(color = 'black', fill = 'white') +
   geom_text(aes(label = no_otus), size = 4) +
                   #ifelse(no_otus > 1, no_otus, '')), size = 4) +
   scale_y_discrete(labels = c(
-    expression("unclassified " * italic("Bacteria")), 
+    expression("unclassified " * italic("Bacteria")),
+    expression(italic("Deferribacterota")),
+    expression(italic("Synergistota")),
     expression(italic("Verrucomicrobiota")),
     expression(italic("Saccharibacteria")), 
     expression(italic("Mycoplasmatota")),
@@ -78,7 +60,7 @@ tile <- long %>%
     expression(italic("Bacteroidota")),
     expression(italic("Bacillota")))) +
   scale_x_discrete(labels = c('Ethanol\n non-resistant', 'Ethanol-resistant')) +
-  theme_minimal(base_size = 13) +
+  theme_minimal(base_size = 14) +
   labs(x = '', y = '', fill = '') +
   theme(plot.margin = unit(c(t = 0, r = 0, b = 0, l = 0), "cm"), 
         panel.grid.major = element_blank())
@@ -105,10 +87,36 @@ per <- long %>%
         axis.ticks.y = element_blank())
 per
 
+# Combine plots tile and per 
+per_tile <- long %>%
+  group_by(is_ethanol_resistant, Phylum) %>%
+  reframe(no_otus = n_distinct(name)) %>%
+  group_by(Phylum) %>%
+  mutate(sum = sum(no_otus), 
+         per = (no_otus/sum)*100) %>%
+  
+  #pivot_wider(names_from = 'is_ethanol_resistant', values_from = 'no_otus', values_fill = 0) %>%
+  ggplot(aes(x = per, y = Phylum, fill = is_ethanol_resistant)) +
+  geom_col() +
+  geom_text(aes(label = no_otus), size = 5) +
+  scale_fill_manual(values = col) +
+  theme_minimal(base_size = 14) +
+  labs(x = '% OTUs', y = '', fill = '') +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"), 
+        panel.grid.major = element_blank(), 
+        legend.position = 'bottom', 
+        axis.ticks.x = element_line(linewidth = 1, colour = "black"),
+        axis.text.y = element_blank(), 
+        axis.ticks.y = element_blank())
+per_tile
+ggsave('out/figures_v2/Fig1A.svg')
+
+
 # Second plot is relative abundance of OTUs that were determined EtOH and non EtOH 
-rel <- long_fractions %>%
+rel <- long %>%
   ggplot(aes(x = is_ethanol_resistant, y = rel_abund, fill = is_ethanol_resistant)) +
   geom_boxplot() +
+  #geom_jitter() +
   stat_compare_means(mapping = aes(label = paste('Wilcoxon, p', ..p.format..)), method = 'wilcox',  label.x = 1.3, vjust = 5) +
   scale_fill_manual(values = col) +
   scale_y_log10() +
@@ -118,8 +126,37 @@ rel <- long_fractions %>%
   theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
 rel
 
+# Mean relative abundance of OTU irregardles of where it was found! 
+rel_minimal <- long %>%
+  group_by(name, is_ethanol_resistant) %>% 
+  reframe(mean_rel = mean(rel_abund)) %>% 
+  ggplot(aes(x = is_ethanol_resistant, y = mean_rel, fill = is_ethanol_resistant)) +
+  geom_boxplot() +
+  #geom_jitter() +
+  stat_compare_means(mapping = aes(label = paste('Wilcoxon, p', ..p.format..)), method = 'wilcox',  label.x = 1.3, vjust = 5) +
+  scale_fill_manual(values = col) +
+  scale_y_log10() +
+  scale_x_discrete(labels = c('Ethanol\n non-resistant', 'Ethanol-resistant')) +
+  labs(x = '', y = 'log10(relative abundance)') +
+  theme_bw(base_size = 14) +
+  theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
+rel_minimal
+
+# Normalized abundance 
+norm_abund <- long %>% 
+  ggplot(aes(x = is_ethanol_resistant, y = norm_abund, fill = is_ethanol_resistant)) +
+  geom_violin() +
+  stat_compare_means(mapping = aes(label = paste('Wilcoxon, p', ..p.format..)), method = 'wilcox', label.x = 1.3, vjust = 5) +
+  scale_fill_manual(values = col) +
+  scale_y_log10() +
+  scale_x_discrete(labels = c('Ethanol\n non-resistant', 'Ethanol-resistant')) +
+  labs(x = '', y = 'log10(normalized abundance)') +
+  theme(legend.position = 'none', plot.margin = unit(c(0, 0.1, 0, 0), "cm"))
+norm_abund
+ggsave('out/figures_v2/normalized_abundance.png')
+
 # Third plot % OTUs on y, x 0 prevalence % 
-prevalence <- long_fractions %>%
+prevalence <- long %>%
   mutate(time_point = as.integer(substr(Group, 3, 5))) %>%
   group_by(is_ethanol_resistant, person, name) %>%
   reframe(all_timepoints = n(), 
@@ -127,7 +164,7 @@ prevalence <- long_fractions %>%
           timepoints_missing = sum(PA == 0)) %>%
   # OTU had to be present in at least 50% of all samples from 1 individual! 
   # Remove 'singletons'
-  #filter(timepoints_present > 1) %>%
+  filter(timepoints_present > 1) %>%
   mutate(prevalence = (timepoints_present/all_timepoints)*100) %>%
   group_by(person, is_ethanol_resistant) %>%
   mutate(no_otus = n_distinct(name)) %>%
@@ -142,10 +179,10 @@ prevalence2 <- prevalence %>%
   reframe(mean_per_otus = median(per_otus))
 
 preval <- ggplot(prevalence, aes(x = prevalence, y=per_otus)) +
-  geom_line(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol resistant'),  
-            aes(group=person), color= '#f0a336', linewidth=0.9, alpha=0.3) +
-  geom_line(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol non-resistant'), 
-            aes(group=person), color= '#3CB371', linewidth=0.9, alpha=0.3) +
+  geom_point(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol-resistant'),  
+            aes(group=person), color= '#f0a336', size = 2, alpha=0.3) +
+  geom_point(data=prevalence %>% filter(is_ethanol_resistant == 'Ethanol non-resistant'), 
+            aes(group=person), color= '#3CB371', size = 2, alpha=0.3) +
   geom_smooth(prevalence2, mapping =  aes(x = prevalence, y = mean_per_otus, color = is_ethanol_resistant), linewidth=1.3, se = FALSE) +
   scale_color_manual(values = col) +
   labs(x='Within-individual prevalence\n (% of timepoints present)', y= '% OTUs') +
@@ -154,22 +191,22 @@ preval <- ggplot(prevalence, aes(x = prevalence, y=per_otus)) +
 preval
 
 
+
 tile_per <- ggarrange(tile + labs(tag = 'A'), per, widths = c(.9, 1), 
                       ncol =2, common.legend = TRUE, legend = 'bottom')
 tile_per
 
-rel_preval <- ggarrange(rel + labs(tag = 'B'), preval + labs(tag = 'C'),
+rel_preval <- ggarrange(rel_minimal + labs(tag = 'B'), preval + labs(tag = 'C'),
                         ncol = 1, heights = c(.8, 1), legend = 'none', align = 'v')
 rel_preval
 
-ggarrange(tile_per, rel_preval, 
+ggarrange(per_tile, rel_preval, 
           widths = c(1, .8), ncol = , common.legend = TRUE, legend = 'bottom')
 
-ggsave('out/figures/figure1_v15.tiff' , dpi = 600)
-ggsave('out/figures/figure1.pdf', dpi=600)
+ggsave('out/figures_v2/figure1.svg' , dpi = 600)
 
 # Statisitcs, is there really more ethanol resistant OTUs present at more time-points than ethanol non-resistant 
-preval_stat <- long_fractions %>%
+preval_stat <- long %>%
   mutate(time_point = as.integer(substr(Group, 3, 5))) %>%
   group_by(is_ethanol_resistant, person, name) %>%
   reframe(all_timepoints = n(), 
@@ -181,8 +218,24 @@ preval_stat <- long_fractions %>%
 
 wilcox.test(timepoints_present ~ is_ethanol_resistant, data = preval_stat) # YES
 
-long_fractions %>% filter(phylum == 'Bacteroidota', is_ethanol_resistant == 'Ethanol resistant') %>% 
-  summarise(sum = sum(rel_abund))
+# W = 33952505, p-value = 1.928e-05
+# alternative hypothesis: true location shift is not equal to 0
+
+long %>% filter(Phylum == 'Bacteroidota', is_ethanol_resistant == 'Ethanol-resistant') %>% 
+  reframe(mean = mean(rel_abund))
+
+# What relative abundance per person and normalized abundance per person do EtOH OTUs represent 
+long %>%  group_by(original_sample) %>% 
+  mutate(sum_rel = sum(rel_abund)) %>%  
+  ungroup() %>% 
+  group_by(is_ethanol_resistant, original_sample, person, date, sum_rel) %>% 
+  reframe(etoh_rel = sum(rel_abund), 
+          percent_etoh_in_bulk = etoh_rel/sum_rel) %>% 
+  group_by(is_ethanol_resistant, person) %>% 
+  reframe(mean = mean(percent_etoh_in_bulk), 
+          sd = sd(percent_etoh_in_bulk))
+  
+  
 
 # # Alternative figure 1 
 # abundance <- otutab_plots %>%
@@ -301,7 +354,7 @@ wilcox_to_df <- function(wilcox_result, same_person_label) {
 time_corr <- function(data) {
   # Function to compute correlation and p-value for each subset
   cor_function <- function(df) {
-    cor_result <- cor.test(as.numeric(df$date_dist), df$median, method = "pearson")
+    cor_result <- cor.test(as.numeric(df$date_dist), df$median, method = "spearman")
     return(data.frame(corr = cor_result$estimate, p_value = cor_result$p.value))
   }
   
@@ -315,6 +368,9 @@ time_corr <- function(data) {
   
   return(corr_table)
 }
+
+# Here usage of Spearman as Jaccard is rarelly normaly distributed
+# Or even mix-effect model: lmer(Jaccard ~ time * group + (1 + time | individual), data = your_long_df)
 
 
 etoh_bac_min <- calculate_min(etoh_bacillota) #78
@@ -525,7 +581,7 @@ ggsave('out/figures/supplement_figure8_fractions1.png', dpi = 600)
 # Figure 3 - Sporulation frequency 
 
 set.seed(96)
-theme_set(theme_bw(base_size = 12))
+theme_set(theme_bw(base_size = 14))
 
 # OTU colors 
 otu_colors1 <- c(
@@ -613,8 +669,20 @@ otu_colors2 <- c(
     "Otu000041" = "#c6dbef"
   )
 
-sporeformers_list <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Firmicutes') %>%
+sporeformers_list <- filter(long, substr(Group, 1, 1) == 'M' & is_ethanol_resistant  == 'Ethanol-resistant' & Phylum == 'Bacillota') %>%
   pull(unique(name))
+
+otu_long <- rownames_to_column(as.data.frame(otutab), 'Group') %>%
+  pivot_longer(cols = starts_with('Otu')) %>%
+  left_join(metadata %>% select(original_sample, Group, person, date), by = 'Group') %>%
+  group_by(Group) %>%
+  mutate(rel_abund = value / sum(value),
+         PA = ifelse(value > 0, 1, 0)) %>%
+  ungroup() %>%
+  left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
+  mutate(norm_abund = rel_abund * copies) %>%
+  select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
+  left_join(taxtab, by = 'name')
 
 otutab_norm <- otu_long %>%
   filter(substr(Group, 1, 1) == 'M') %>%
@@ -806,19 +874,30 @@ ggsave('out/figures/varPersonPopulation_otu.tiff', dpi = 600)
 # days
 # ggsave('out/mini_days_person.png', dpi=600)
 
+ymin_max <- otutabME %>%  group_by(person) %>%  
+  reframe(ymin = pmax(min(ei/mi, na.rm = TRUE) / 2, 1e-6),  
+          ymax = max(ei/mi, na.rm = TRUE) * 4) %>%  
+  mutate(ymin = pmax(ymin, 1e-6))
+
+event_data <- read.table('data/extreme_event_data.csv', sep = ';', header = TRUE) %>%  
+  select(-c(ymin,ymax)) %>% 
+  left_join(ymin_max, by = 'person')
+  
 # Without normalization of sporulation frequency 
 time <- otutabME %>%
-  ggplot(aes(x = day, y = ei/mi)) +
-  geom_point() +
-  geom_line(linewidth = 1, aes(color = name), show.legend = FALSE) +
+  ggplot(aes(x = day, y = ei/mi, color = name)) +
+  # geom_rect(data = event_data, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = extremevent_type),
+  #           inherit.aes = FALSE, alpha = 0.6) +
+  # scale_fill_manual(values = c('white','#d94343', '#d98e43', '#f1f011', '#0c9910', '#3472b7', '#7934b7', '#b73485', '#0f5618')) +
+  geom_point(show.legend = FALSE) +
+  geom_line(linewidth = 1, show.legend = FALSE) +
   scale_color_manual(values = otu_colors2) +
-  facet_wrap(~person) +
   scale_y_log10() +
   labs(x = 'Day', y = expression("Sporulation frequency [log("*e [i]*"/"*m [i]*")]")) +
   facet_wrap(~person, scales = 'free') +
   theme(plot.margin = unit(c(0, 0.3, 0, 0), "cm"))
 time
-ggsave('out/figures/logmiei_person_time.tiff', dpi = 600)
+ggsave('out/figures_v2/logmiei_person_time_sin.svg', dpi = 600)
 
 # otutabME %>%
 #   left_join(taxtab, by = 'name') %>%
@@ -836,7 +915,7 @@ host_population
 
 ggarrange(time + labs(tag = 'A')+theme(basze_size =12), host_population, common.legend = FALSE, nrow = 2, 
           heights = c(1, 0.8))
-ggsave('out/figures/figure3.png', dpi=600)
+ggsave('out/figures_v2/figure3.svg', dpi=600)
 ggsave('out/figures/figure3.pdf', dpi = 600)
 
 # Kruskal.test za distribucije grafov individual variance pf oTUs sporulation frequency/ populations varaince in log (ei/mi) for individual and OTUs
