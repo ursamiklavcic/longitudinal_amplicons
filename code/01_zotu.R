@@ -17,20 +17,17 @@ set.seed(96)
 theme_set(theme_bw(base_size = 12))
 
 col <- c('#3CB371', '#f0a336')
-col4 <- c('#f0a336', '#3CB371', '#f35020', '#4a869c')
 
 # Data 
 # delete # in the first line by hand 
-shared <- read.table('data/USEARCH12/zotutab_raw.tsv', sep = '\t', header = TRUE)
-
-shared2 <- shared %>%
+shared <- read.table('data/USEARCH12/zotutab_raw.tsv', sep = '\t', header = TRUE) %>%
   pivot_longer(-Group) %>% 
   rename(Group = name, 
          name = Group) %>%  
   mutate(Group = substr(Group, 1, 5))
 
 # Distribution of reads per sample 
-shared2 %>%
+shared %>%
   group_by(Group) %>%
   summarize(ReadsPerSample=sum(value)) %>%
   ggplot(aes(x=ReadsPerSample)) +
@@ -41,10 +38,10 @@ shared2 %>%
 ggsave('out/usearch/reads_per_sample.png', dpi=600)
 
 # How min/max/mean/sum reads per sample/all samples
-info1 = shared2 %>%
+info1 = shared %>%
   group_by(Group) %>%
   summarize(ReadsPerSample=sum(value)) %>% 
-  filter(Group != c('SNC', 'MNC'))
+  filter(Group != c('SNC_S', 'MNC_S'))
 min(info1$ReadsPerSample) 
 max(info1$ReadsPerSample) 
 mean(info1$ReadsPerSample) 
@@ -52,16 +49,17 @@ median(info1$ReadsPerSample)
 sum(info1$ReadsPerSample) # 95933487
 
 # Distribution of OTUs
-shared2 %>%
+shared %>%
   group_by(name) %>%
   summarize(OTUabundance=sum(value)) %>%
   ggplot(aes(x=OTUabundance)) +
-  geom_histogram(breaks=seq(0, 5000, by =1)) +
+  geom_histogram(breaks=seq(0, 10000, by =100)) +
   labs(x = '# reads ASV', y= '# ASVs')
 ggsave('out/usearch/reads_per_ASV.png', dpi=600)
 
 # How min/max/mean reads per OTU
-info2 = shared2 %>%
+info2 = shared %>%
+  filter(Group != c('SNC_S', 'MNC_S')) %>% 
   group_by(name) %>%
   summarize(OTUabundance=sum(value))
 min(info2$OTUabundance) 
@@ -70,86 +68,10 @@ mean(info2$OTUabundance)
 median(info2$OTUabundance) 
 sum(info2$OTUabundance) 
 
-# How many ASVs to remove? 
-percent_removed = c(0, 1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)
-results = data.frame()
-
-for (i in percent_removed) {
-  number_reads = sum(shared2$value) * i
-  
-  shared1 = shared2 %>%
-    group_by(name) %>%
-    summarise(sum_reads = sum(value), .groups = 'drop') %>%
-    filter(sum_reads > number_reads)
-  
-  res_sum = sum(shared1$sum_reads)
-  res_distinct = n_distinct(shared1$name)
-  
-  results = rbind(results, data.frame(percent_removed = i*100, 
-                                      number_reads = res_sum, 
-                                      number_otus = res_distinct))
-  
-}
-results
-write_csv(results, 'out/usearch/removed.csv')
-
-ggarrange(ggplot(results, aes(x = percent_removed, y = number_reads)) +
-            geom_point(size = 2) +
-            geom_line() +
-            scale_y_log10() +
-            scale_x_log10() +
-            #coord_cartesian(xlim = c(0,10)) +
-            #scale_x_continuous(labels = function(x) paste0(x, "%")) +
-            labs(x = 'Percent of reads removed', y = 'Number of reads remaining'), 
-          ggplot(results, aes(x = percent_removed, y= number_otus)) +
-            geom_point(size = 2) +
-            geom_line() +
-            scale_y_log10() +
-            scale_x_log10() +
-            #coord_cartesian(xlim = c(0,1), ylim = c(0,16000)) +
-            #scale_x_continuous(labels = function(x) paste0(x, "%")) +
-            labs(x = 'Percent of reads removed', y = 'Number of ASVs remaining'))
-
-ggsave('out/usearch/ASV_reads_removed.png', dpi = 600)
-
-##  Filter_rarefy
-# Min number of reads in sample and min sequences per OTU as determined in the exploration analysis
-# Adjust numbers based on previous analysis above 
-reads_per_sample = 170000 # we loose 6 samples
-min_seqs_per_asv = sum(shared2$value)*0.00001 # remove 0.001% which is 0.00001 log10 less than with OTUs
-
-shared_pre = shared2 %>%
-  group_by(name) %>%
-  # Count the number of reads each OTU has
-  mutate(sum_asvs = sum(value)) %>%
-  # Remove OTUs that have less than 0,000001% reads in total
-  filter(sum_asvs > min_seqs_per_asv) %>%
-  ungroup() %>%
-  group_by(Group) %>%
-  # Count the number of reads in each sample
-  mutate(sum_sample = sum(value)) %>%
-  # and remove all from microbiota and sporobiota, that have less than 100 000 
-  filter(sum_sample > reads_per_sample) %>%
-  ungroup() %>% 
-  select(-sum_asvs, -sum_sample) 
-
-# Data for EtOH-EMA fraction VS microbiota samples 
-asvtabEM_pre = shared_pre %>%
-  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
-  column_to_rownames('Group')
-
-# Rarefy the data once - as we sequenced so deep that for the first analysis this is not crucial !
-asvtabEM = rrarefy(asvtabEM_pre, sample=reads_per_sample)
-saveRDS(asvtabEM, 'data/r_data/zotutab.RDS')
-
-# Extract OTUs that are present rarefied table 
-asv_names = as.data.frame(asvtabEM) %>% colnames() 
-
 # Import taxonomy table
 taxtab <- read.table('data/USEARCH12/zotu_taxonomy.tsv', sep = '\t', header = FALSE) %>% 
   select(1, 4) %>%
   rename(name = V1, taxonomy = V4) %>% 
-  filter(name %in% asv_names) %>%
   mutate(taxonomy = str_remove_all(taxonomy, "\\([^)]+\\)")) %>% 
   separate(taxonomy, into=c("Domain", "Phylum", "Class", "Order", "Family", "Genus"), sep=",", 
            extra = 'drop') %>% 
@@ -168,13 +90,165 @@ taxtab <- read.table('data/USEARCH12/zotu_taxonomy.tsv', sep = '\t', header = FA
     Phylum == 'Candidatus_Saccharibacteria' ~ 'Saccharibacteria', 
     TRUE ~ Phylum )) %>% 
   mutate(Genus = ifelse(is.na(Genus), paste0("unclassified_", Family), Genus),
-    Family = ifelse(is.na(Family), paste0("unclassified_", Order), Family),
-    Order  = ifelse(is.na(Order),  paste0("unclassified_", Class), Order),
-    Class  = ifelse(is.na(Class),  paste0("unclassified_", Phylum), Class),
-    Phylum = ifelse(is.na(Phylum), paste0("unclassified_", Domain), Phylum),
-    Domain = ifelse(is.na(Domain), "unclassified", Domain))
+         Family = ifelse(is.na(Family), paste0("unclassified_", Order), Family),
+         Order  = ifelse(is.na(Order),  paste0("unclassified_", Class), Order),
+         Class  = ifelse(is.na(Class),  paste0("unclassified_", Phylum), Class),
+         Phylum = ifelse(is.na(Phylum), paste0("unclassified_", Domain), Phylum),
+         Domain = ifelse(is.na(Domain), "unclassified", Domain))
+
+
+# Remove evething that is not Bacteria and not classified 
+zotu_tax <- shared %>% 
+  left_join(taxtab, by = 'name') 
+
+unique(zotu_tax$Domain) # Filter so that only Bacteria remains
+unique(zotu_tax2$Phylum)  
+unique(zotu_tax2$Class) # filter unclassified_NA, Mollicutes
+unique(zotu_tax2$Order) # filter unclassified_NA
+unique(zotu_tax2$Family)
+unique(zotu_tax2$Genus)
+
+zotu_tax2 <- zotu_tax %>%  
+  filter(Domain == 'Bacteria') %>%  
+  filter(Class != c('unclassified_NA', 'Mollicutes')) %>% 
+  filter(Order != 'unclassified_NA')
+
+length(unique(zotu_tax$name))
+length(unique(zotu_tax2$name))
+
+# Filter ZOTUs present in negative control samples 
+snc <- filter(shared, Group == 'SNC_S' & value > 10) %>%  
+  pull(unique(name))
+
+mnc <- filter(shared, Group == 'MNC_S' & value > 10) %>%  
+  pull(unique(name))
+
+zotu_tax2 <- zotu_tax2 %>%
+  filter((substr(Group, 1, 1) == 'M' & !(name %in% mnc)) |
+           (substr(Group, 1, 1) == 'S' & !(name %in% snc)))
+
+# Distribution of reads per sample with removed everthing that is not Bacteria
+zotu_tax2 %>%
+  group_by(Group) %>%
+  summarize(ReadsPerSample=sum(value)) %>%
+  ggplot(aes(x=ReadsPerSample)) +
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0, 800000, by=100000)) +
+  scale_y_continuous(breaks = seq(0,40, by=5)) +
+  labs(x = 'Reads per sample', y = 'Number of samples')
+ggsave('out/usearch/reads_per_sample_filter=Bacteria.png', dpi=600)
+
+# How min/max/mean/sum reads per sample/all samples
+info3 <- zotu_tax2 %>%
+  group_by(Group) %>%
+  summarize(ReadsPerSample=sum(value)) %>% 
+  filter(Group != c('SNC_S', 'MNC_S'))
+min(info3$ReadsPerSample) 
+max(info3$ReadsPerSample) 
+mean(info3$ReadsPerSample) 
+median(info3$ReadsPerSample) 
+sum(info3$ReadsPerSample) # 95933487
+
+# Distribution of OTUs
+zotu_tax2 %>%
+  group_by(name) %>%
+  summarize(OTUabundance=sum(value)) %>%
+  ggplot(aes(x=OTUabundance)) +
+  geom_histogram(breaks=seq(0, 10000, by =100)) +
+  labs(x = '# reads ASV', y= '# ASVs')
+ggsave('out/usearch/reads_per_ASV_filter=Bacteria.png', dpi=600)
+
+# How min/max/mean reads per OTU
+info4 = zotu_tax2 %>%
+  group_by(name) %>%
+  summarize(OTUabundance=sum(value))
+min(info4$OTUabundance) 
+max(info4$OTUabundance) 
+mean(info4$OTUabundance) 
+median(info4$OTUabundance) 
+sum(info4$OTUabundance) 
+
+# How many ASVs to remove? 
+percent_removed = c(0, 1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)
+results = data.frame()
+
+for (i in percent_removed) {
+  number_reads = sum(zotu_tax2$value) * i
+  
+  shared1 = zotu_tax2 %>%
+    group_by(name) %>%
+    reframe(sum_reads = sum(value)) %>%
+    filter(sum_reads > number_reads)
+  
+  res_sum = sum(shared1$sum_reads)
+  res_distinct = n_distinct(shared1$name)
+  
+  results = rbind(results, data.frame(percent_removed = i*100, 
+                                      number_reads = res_sum, 
+                                      number_otus = res_distinct))
+  
+}
+results
+write_csv(results, 'out/usearch/removed_filter=Bacteria.csv')
+
+ggarrange(ggplot(results, aes(x = percent_removed, y = number_reads)) +
+            geom_point(size = 2) +
+            geom_line() +
+            scale_y_log10() +
+            scale_x_log10() +
+            #coord_cartesian(xlim = c(0,10)) +
+            #scale_x_continuous(labels = function(x) paste0(x, "%")) +
+            labs(x = 'Percent of reads removed', y = 'Number of reads remaining'), 
+          ggplot(results, aes(x = percent_removed, y= number_otus)) +
+            geom_point(size = 2) +
+            geom_line() +
+            scale_y_log10() +
+            scale_x_log10() +
+            #coord_cartesian(xlim = c(0,1), ylim = c(0,16000)) +
+            #scale_x_continuous(labels = function(x) paste0(x, "%")) +
+            labs(x = 'Percent of reads removed', y = 'Number of ASVs remaining'))
+
+ggsave('out/usearch/ASV_reads_removed_filter=Bacteria.png', dpi = 600)
+
+##  Filter_rarefy
+# Min number of reads in sample and min sequences per OTU as determined in the exploration analysis
+# Adjust numbers based on previous analysis above 
+reads_per_sample = 20000 # we loose 6 samples ? 
+min_seqs_per_asv = sum(zotu_tax2$value)*0.00001 # remove 0.001% which is 0.00001 log10 less than with OTUs
+
+shared_pre <- zotu_tax2 %>%
+  group_by(name) %>%
+  # Count the number of reads each OTU has
+  mutate(sum_asvs = sum(value)) %>%
+  # Remove OTUs that have less than 0,000001% reads in total
+  filter(sum_asvs > min_seqs_per_asv) %>%
+  ungroup() %>%
+  group_by(Group) %>%
+  # Count the number of reads in each sample
+  mutate(sum_sample = sum(value)) %>%
+  # and remove all from microbiota and sporobiota, that have less than 100 000 
+  filter(sum_sample > reads_per_sample) %>%
+  ungroup() %>% 
+  select(-sum_asvs, -sum_sample) 
+
+length(unique(shared_pre$Group)) 
+length(unique(shared_pre$name)) 
+
+# Data for EtOH-EMA fraction VS microbiota samples 
+asvtabEM_pre = select(shared_pre, name, Group, value)  %>%
+  pivot_wider(names_from = 'name', values_from = 'value', values_fill = 0) %>%
+  column_to_rownames('Group')
+
+# Rarefy the data once - as we sequenced so deep that for the first analysis this is not crucial !
+asvtabEM = rrarefy(asvtabEM_pre, sample=reads_per_sample)
+saveRDS(asvtabEM, 'data/r_data/zotutab.RDS')
+
+# Extract OTUs that are present rarefied table 
+asv_names = as.data.frame(asvtabEM) %>% colnames() 
+taxtab <-  filter(taxtab, name %in% asv_names)
 
 saveRDS(taxtab, 'data/r_data/zotu_taxtab.RDS')
+
 
 # Import metadata
 metadata = as_tibble(read.csv('data/metadata.csv', sep=';')) %>%
@@ -186,7 +260,7 @@ saveRDS(metadata, 'data/r_data/zotu_metadata.RDS')
 ## Absolute quantification & define EtOH ASVs 
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
-zotu_long <- rownames_to_column(as.data.frame(asvtabEM), 'Group') %>% 
+asv_long <- rownames_to_column(as.data.frame(asvtabEM), 'Group') %>% 
   pivot_longer(cols = starts_with('Zotu')) %>%
   left_join(metadata %>% select(original_sample, Group, person, date), by = 'Group') %>%
   group_by(Group) %>%
@@ -198,7 +272,7 @@ zotu_long <- rownames_to_column(as.data.frame(asvtabEM), 'Group') %>%
   select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
   left_join(taxtab, by = 'name') 
 
-asv_long <- zotu_long
+
 # define ASVs
 etoh_asvs <- left_join(asv_long %>% filter(substr(Group, 1, 1) == 'M'), 
                        asv_long %>% filter(substr(Group, 1, 1) == 'S'), 
@@ -410,8 +484,7 @@ rel_preval
 ggarrange(tile_per, rel_preval, 
           widths = c(1, .8), ncol = , common.legend = TRUE, legend = 'bottom')
 
-ggsave('out/usearch/figure1_v15.tiff' , dpi = 600)
-ggsave('out/usearch/figure1.pdf', dpi=600)
+ggsave('out/usearch/figure1.png' , dpi = 600)
 
 # Statisitcs, is there really more ethanol resistant OTUs present at more time-points than ethanol non-resistant 
 preval_stat <- long_fractions %>%
@@ -529,7 +602,7 @@ non_etoh_other_min <- calculate_min(non_etoh_other)
 
 # Function to calculate beta distances (Bray-Curtis OR Jaccard)
 ## ADJUST THIS NUMBER!!!!
-min <- 32
+min <- 44
 
 # Calculate Bray-Curtis distances and combine all results 
 bray <- calculate_dist(etoh_bacillota, 'bray') %>%
@@ -704,7 +777,7 @@ j_time
 ggarrange(jaccard_boxplot + labs(tag = 'A'), 
           j_time + labs(tag = 'B'), common.legend = TRUE, legend = 'bottom',ncol=2, widths = c(0.8, 1))
 
-ggsave('out/usearch/figure2.png', dpi = 600)
+ggsave('out/usearch/figure2_jaccard.png', dpi = 600)
 ggsave('out/usearch/figure2.tiff', dpi = 600)
 
 # Additional test for usage of beta diveristy metrics: Is the difference we see between ethanol resistant and ethanol non-resistant only, 
@@ -720,13 +793,13 @@ ggplot(sf, aes(x = log10(mean_rel_abund), y = log10(sumsq_diff_abund), color = i
   geom_point() +
   scale_color_manual(values = col) +
   labs(x = 'Mean relative abundance of OTU', y = 'Sum of squared differences between realtive abudnances \n of an OTU in different samples', color = '')
-ggsave('out/asvs/supplement_figure8.png', dpi = 600)
+ggsave('out/usearch/supplement_figure8.png', dpi = 600)
 
 
 ggplot(sf, aes(x = log10(mean_rel_abund), y = log10(sumsq_diff_abund), color = fraction)) +
   geom_point() +
   labs(x = 'Mean relative abundance of OTU', y = 'Sum of squared differences between realtive abudnances \n of an OTU in different samples', color = '') 
-ggsave('out/asvs/supplement_figure8_fractions1.png', dpi = 600)
+ggsave('out/usearch/supplement_figure8_fractions1.png', dpi = 600)
 
 
 # Figure 3 - Sporulation frequency 
@@ -923,14 +996,14 @@ otuPA <- asv_long %>%
 otu_alwaysM <- otuPA %>%
   select(starts_with('M')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum > ((ncol(.) -1)*0.9)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.8)) %>%
   rownames_to_column('name') %>%
   pull(name)
 
 otu_alwaysS = otuPA %>%
   select(starts_with('S')) %>%
   mutate(otu_sum = rowSums(.)) %>%
-  filter(otu_sum > ((ncol(.) -1)*0.9)) %>%
+  filter(otu_sum > ((ncol(.) -1)*0.8)) %>%
   rownames_to_column('name') %>%
   pull(name)
 

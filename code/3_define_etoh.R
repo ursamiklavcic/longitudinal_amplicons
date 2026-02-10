@@ -135,7 +135,7 @@ otu_long %>%
 otu_long %>%
   filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
   summarise(no_otus = n_distinct(name))
-# In bulk microbiota samples only 2433!; 141 OTus were found only in ethanol resistant samples!
+# In bulk microbiota samples only 2433!; torej 2574-2433=141 OTUs were found only in ethanol resistant samples!
 
 otu_long %>%
   filter(substr(Group, 1, 1) == 'S' & PA == 1) %>%
@@ -151,15 +151,26 @@ otu_long_both %>%
   summarize(no_otus = n_distinct(name))
 # In both samples we detected 1475 unique OTUs
 
-# How many OTUs from Bacillota are in ethanol tretaed samples?
-otu_long %>% filter(Phylum == 'Bacillota') %>%
-  #filter(name %in% etoh_otus) %>%
-  mutate(n = n_distinct(name))
+# Properties of OTUs found in only EtOH samples: 
+otus_in_both <- otu_long %>%
+  filter(PA == 1) %>%  
+  pull(unique(name))
 
+otus_only_untreated <- otu_long %>%
+  filter(substr(Group, 1, 1) == 'M' & PA == 1) %>% 
+  pull(unique(name))
 
+otus_etoh_only <- otu_long %>% filter(name %in% otus_in_both) %>%  
+  filter(!name %in% otus_only_untreated) %>% 
+  filter(substr(Group, 1, 1) == 'S' & value > 0)
 
+otus_etoh_only %>% reframe(n = n_distinct(name))
 
-
+otus_etoh_only %>% 
+  ggplot(aes(x = rel_abund, y = Phylum, fill = Phylum)) +
+  geom_boxplot() +
+  scale_x_log10() +
+  labs(x = 'Relative abundance [log10]', y = '')
 
 # The same but for sequences 
 seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>% 

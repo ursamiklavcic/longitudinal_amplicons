@@ -27,6 +27,7 @@ long_fractions <- readRDS('data/r_data/long_fractions.RDS')
 
 otutabME <- readRDS('data/r_data/otutabME.RDS')
 
+unique(long_fractions$is_ethanol_resistant)
 # Figure 1 
 long <- long_fractions %>%
   mutate(Phylum = case_when(
@@ -117,29 +118,35 @@ rel <- long %>%
   #   expression(italic("Actinomycetota")),
   #   expression(italic("Bacteroidota")),
   #   expression(italic("Bacillota")))) +
-  labs(y = '', x = 'log10(relative abundance)') +
+  labs(y = '', x = 'Relative abundance [log10]') +
   theme_bw(base_size = 14) +
   theme(legend.position = 'none', plot.margin = unit(c(0, 0, 0, 0), "cm"), 
         axis.text.y = element_blank())
 rel
 
 # plot % OTUs on y, x 0 prevalence % 
+unique(long$Phylum)
+group_by(long, Phylum) %>% 
+  filter(PA == 1) %>% 
+  reframe(n = n_distinct(name))
+
 prevalence <- long %>%
   filter(Phylum %in% c('unclassified Bacteria', 'Pseudomonadota', 'Actinomycetota', 'Bacteroidota', 'Bacillota')) %>% 
   mutate(time_point = as.integer(substr(Group, 3, 5))) %>%
   group_by(is_ethanol_resistant, person, Phylum, name) %>%
-  reframe(all_timepoints = n(), 
-          timepoints_present = sum(PA == 1), 
-          timepoints_missing = sum(PA == 0)) %>%
+  reframe(timepoints_present = sum(PA == 1), 
+          timepoints_missing = sum(PA == 0), 
+          all_timepoints = timepoints_present + timepoints_missing) %>%
   mutate(prevalence = (timepoints_present / all_timepoints) * 100) %>%
+  filter(prevalence > 0) %>% 
   # Calculate number of OTUs per person x treatment x Phylum
-  group_by(person) %>%
-  mutate(all_otus_per_person = n_distinct(name)) %>%
+  group_by(person, is_ethanol_resistant, Phylum) %>%
+  mutate(person_phylum = sum(prevalence > 0)) %>%
   ungroup() %>%
-  group_by(person, is_ethanol_resistant, Phylum, prevalence) %>%
-  reframe(no_otus_person_ethanol_phylum = n_distinct(name), 
-          per_otus = (no_otus_person_ethanol_phylum / all_otus_per_person) * 100) %>% 
-  unique()
+  group_by(is_ethanol_resistant, person, Phylum, prevalence) %>%
+  reframe(person_phylum_ethanol = sum(prevalence > 0), 
+          per_otus = (person_phylum_ethanol / person_phylum) * 100) %>% 
+  unique() 
 
 # Median lines per Phylum as well
 prevalence2 <- prevalence %>%
@@ -149,18 +156,18 @@ prevalence2 <- prevalence %>%
 # Plot
 preval <- prevalence %>%  
   ggplot(aes(x = prevalence, y = per_otus)) +
-  geom_line(data = prevalence %>% filter(is_ethanol_resistant == 'Ethanol-resistant'),
+  geom_point(data = prevalence %>% filter(is_ethanol_resistant == 'Ethanol-resistant'),
             aes(group = interaction(person, Phylum)),
-            color = '#f0a336', linewidth = 0.9, alpha = 0.3) +
-  geom_line(data = prevalence %>% filter(is_ethanol_resistant == 'Ethanol non-resistant'),
+            color = '#f0a336', size = 1.2, alpha = 0.3) +
+  geom_point(data = prevalence %>% filter(is_ethanol_resistant == 'Ethanol non-resistant'),
             aes(group = interaction(person, Phylum)),
-            color = '#3CB371', linewidth = 0.9, alpha = 0.3) +
+            color = '#3CB371', size = 1.2, alpha = 0.3) +
   geom_smooth(data = prevalence2,
               mapping = aes(x = prevalence, y = median_per_otus, color = is_ethanol_resistant),
-              linewidth = 1.3, se = FALSE) +
+              linewidth = 1.4, se = FALSE) +
   facet_wrap(~Phylum, nrow = 1, scales = 'free_y') +  
   scale_color_manual(values = col) +
-  labs(x = 'Within-individual prevalence\n(% of timepoints present)',
+  labs(x = 'Within-individual prevalence [% of timepoints present]',
        y = '% of all OTUs within a person') +
   theme_bw(base_size = 14) +
   theme(legend.position = 'none',
@@ -175,8 +182,8 @@ tile_per_rel
 ggarrange(tile_per_rel, preval + labs(tag = 'D'), 
           heights = c(1, .7), ncol = 1, common.legend = FALSE)
 
-ggsave('out/figures/bageco_fig1.png' , dpi = 600)
-
+ggsave('out/figures/bageco_fig1.png' , dpi = 600, width= 21, height = )
+ggsave('~/projects/thesis/out/longitudinal_amplicons/OTU_composition_abundance.png', dpi = 600)
 
 
 
