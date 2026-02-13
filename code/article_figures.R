@@ -26,10 +26,7 @@ taxtab <- readRDS('data/r_data/taxtab.RDS')
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
 
 # Figure 1 
-long <- readRDS('data/r_data/long_all.RDS') %>%
-  #filter(!(Phylum %in% c('Deferribacterota', 'Synergistota'))) %>%
-  mutate(is_ethanol_resistant = ifelse(is_ethanol_resistant == 'Ethanol resistant',
-                                       'Ethanol-resistant', 'Ethanol non-resistant'))
+long <- readRDS('data/r_data/long_all.RDS') 
 
 unique(long$Phylum)
 
@@ -372,11 +369,14 @@ time_corr <- function(data) {
 # Here usage of Spearman as Jaccard is rarelly normaly distributed
 # Or even mix-effect model: lmer(Jaccard ~ time * group + (1 + time | individual), data = your_long_df)
 
-
 etoh_bac_min <- calculate_min(etoh_bacillota) #78
+etoh_bac_min
 etoh_other_min <- calculate_min(etoh_other) # 24
+etoh_other_min
 non_etoh_bac_min <- calculate_min(non_etoh_bacillota) # 292
+non_etoh_bac_min
 non_etoh_other_min <- calculate_min(non_etoh_other) # 60
+non_etoh_other_min
 
 # Function to calculate beta distances (Bray-Curtis OR Jaccard)
 min <- 24

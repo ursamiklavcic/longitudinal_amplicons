@@ -87,22 +87,22 @@ length(unique(nonetoh_otus))
 # Ethanol resistant OTUs AND non-ethanol resistant OTUs + divide by phylum (Bacillota + other)
 # At the level of Bacillota 
 etoh_bacillota <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum == 'Bacillota') %>%
-  mutate(Group = paste0(Group, "-EB"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Bacillota', fraction = 'Ethanol resistant Bacillota')
+  mutate(Group = paste0(Group, "-EB"), is_ethanol_resistant = 'Ethanol-resistant', taxonomy = 'Bacillota', fraction = 'Ethanol-resistant Bacillota')
 length(unique(etoh_bacillota$name))
-# 320
+# 315
 
 non_etoh_bacillota <-  filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum == 'Bacillota') %>%
-  mutate(Group = paste0(Group, "-NB"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Bacillota', fraction = 'Ethanol non-resistant Bacillota')
+  mutate(Group = paste0(Group, "-NB"), is_ethanol_resistant = 'Non ethanol-resistant', taxonomy = 'Bacillota', fraction = 'Non ethanol-resistant Bacillota')
 length(unique(non_etoh_bacillota$name))
 #1492
 
 etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% etoh_otus & Phylum != 'Bacillota') %>%
-  mutate(Group = paste0(Group, "-E"), is_ethanol_resistant = 'Ethanol resistant', taxonomy = 'Other', fraction = 'Other ethanol resistant taxa') 
+  mutate(Group = paste0(Group, "-E"), is_ethanol_resistant = 'Ethanol-resistant', taxonomy = 'Other', fraction = 'Other ethanol-resistant taxa') 
 length(unique(etoh_other$name))
 #95
 
 non_etoh_other <- filter(otu_long, substr(Group, 1, 1) == 'M' & name %in% nonetoh_otus & Phylum != 'Bacillota') %>% 
-  mutate(Group = paste0(Group, "-NE"), is_ethanol_resistant = 'Ethanol non-resistant', taxonomy = 'Other', fraction = 'Other ethanol non-resistant taxa')
+  mutate(Group = paste0(Group, "-NE"), is_ethanol_resistant = 'Non ethanol-resistant', taxonomy = 'Other', fraction = 'Other non ethanol-resistant taxa')
 length(unique(non_etoh_other$name))
 #443
 
@@ -129,7 +129,7 @@ otu_long %>%
   summarise(no_otus = n_distinct(name))
 # in ethnanol resistant samples we found 1864 unique OTUs.
 
-# Number of OTUs detected in both microbiota and ethanol resistant fraction
+# Number of OTUs detected in both microbiota and ethanol treated samples
 otu_long_both <- otu_long %>% filter(substr(Group, 1, 1) == 'M') %>%
   full_join(filter(otu_long, substr(Group, 1, 1) == 'S'), by = join_by('name', 'person', 'date', 'original_sample', 'Domain', 'Phylum', 'Class', 'Family', 'Order', 'Genus'))
 

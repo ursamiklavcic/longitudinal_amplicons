@@ -5,6 +5,7 @@ library(dplyr)
 library(vegan)
 library(tibble)
 library(readxl)
+library(scales)
 # Code for impelemnting absolute quantification of thw 16S rRNA gene measured by ddPCR 
 # DNA for microbiota samples was diluted to 5 ng/ul * 10E-6
 # primers used were the same as for the 16S rRNA gene sequencinf v3-v4 region 
