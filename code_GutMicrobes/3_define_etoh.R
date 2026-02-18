@@ -1,15 +1,11 @@
-#Load environemnt
-#renv::init()
-#renv::snapshot()
-
-renv::restore()
-
 # # Load libraries
 library(ggplot2)
 library(tidyr)
 library(dplyr)
 library(vegan)
 library(tibble)
+library(readr)
+library(stringr)
 library(scales)
 library(car) # dependency for ggpubr
 library(ggpubr)
@@ -159,52 +155,63 @@ otus_etoh_only %>%
   scale_x_log10() +
   labs(x = 'Relative abundance [log10]', y = '')
 
-# # The same but for sequences 
-# seq_long <- rownames_to_column(as.data.frame(seqtab), 'Group') %>% 
-#   pivot_longer(cols = starts_with('VH')) %>%
-#   left_join(metadata %>% select(original_sample, Group, person, date), by = 'Group') %>%
-#   group_by(Group) %>%
-#   mutate(rel_abund = value / sum(value), 
-#          PA = ifelse(value > 0, 1, 0)) %>%
-#   ungroup() %>%
-#   left_join(ddPCR, by = join_by('Group' == 'Sample')) %>%
-#   mutate(norm_abund = rel_abund * copies) %>%
-#   select(Group, name, value, original_sample, person, norm_abund, rel_abund, PA, date) %>%
-#   left_join(rownames_to_column(seq_taxtab, 'name'), by = 'name')
-# 
-# # OTU that is ethanol resistant once is always ethanol resistant 
-# etoh_seq <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
-#                       seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
-#                       by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-#   # Define if a sequence in a sample of stool is ethanol resistant 
-#   # Contition 1: present in both bulk microbiota sample and ethanol resistant fraction
-#   # Condition 2: higher relative abudnance in EtOH sample than microbiota
-#   mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
-#   group_by(name) %>%
-#   # Calculate the number of times this OTU was present in samples
-#   reframe(no_present = sum(PA.x), 
-#           # Caluclate how many times OTU was defined as part of EtOH fraction based on Conditions 1 & 2
-#           no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-#   ungroup() %>%
-#   # OTUs that have been defined as part Of the ethanol resistant fraction in at least 10% of samples where they were found! 
-#   # (to avoid mistakes of protocol and exclude highly abundant OTUs that maybe were seen as ethanol resistant but just didn't get destoryed!)
-#   filter(no_Yes > (no_present * 0.05)) %>%
-#   # Extract names! 
-#   pull(unique(name))
-# 
-# uncertain_seqs <- left_join(seq_long %>% filter(substr(Group, 1, 1) == 'M'), 
-#                             seq_long %>% filter(substr(Group, 1, 1) == 'S'), 
-#                             by = join_by('name', 'original_sample', 'person', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus')) %>%
-#   mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & rel_abund.y > rel_abund.x, 'Yes', 'No')) %>%
-#   group_by(name) %>%
-#   reframe(no_present = sum(PA.x), 
-#           no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-#   ungroup() %>%
-#   # Filter OTUs that were detected as EtOH resistant at least once, but were detected as such in less than 5% of samples, to exclude them from the analysis 
-#   filter(no_Yes > 1) %>%
-#   filter(no_Yes < (no_present * 0.05)) %>%
-#   pull(unique(name))
-# 
-# nonetoh_seqs <- seq_long %>% filter(substr(Group, 1, 1) == 'M' & PA == 1) %>%
-#   filter(!(name %in% uncertain_seqs) & !(name %in% etoh_seq)) %>%
-#   pull(unique(name))
+
+# Define EtOH species in shotgun data 
+
+abund <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
+  rename_with(~ str_remove(., '^profiled_'), starts_with('profiled_')) %>%
+  #mutate(clade_name = str_remove_all(clade_name, '[a-zA-Z]__')) %>%
+  separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'SGB'),
+           sep="\\|") %>% 
+  mutate(Phylum = ifelse(Phylum == 'p__Firmicutes', 'p__Bacillota', Phylum), 
+         Domain = str_remove_all(Domain, 'k__'), 
+         Phylum = str_remove_all(Phylum, 'p__'), 
+         Class = str_remove_all(Class, 'c__'), 
+         Order = str_remove_all(Order, 'o__'), 
+         Family = str_remove_all(Family, 'f__'), 
+         Genus = str_remove_all(Genus, 'g__'), 
+         Species = str_remove_all(Species, 's__'), 
+         SGB = str_remove_all(SGB, 't__')) %>% 
+  select(-MC013)
+
+bacteria <- filter(abund, Domain == 'Bacteria', !is.na(Phylum), !is.na(Class), 
+                   !is.na(Order), !is.na(Family), !is.na(Genus), !is.na(Species), !is.na(SGB)) %>% 
+  pivot_longer(-c(Domain, Phylum, Class, Order, Family, Genus, Species, SGB)) %>% 
+  left_join(metadata, by = join_by('name' == 'Group')) %>% 
+  mutate(PA = ifelse(value > 0, 1, 0)) %>% 
+  select(Domain, Phylum, Class, Order, Family, Genus, Species, SGB, original_sample, value, name)
+
+etoh_species <- full_join(bacteria %>% filter(substr(name, 1, 1) == 'M'), 
+                          bacteria %>% filter(substr(name, 1, 1) == 'S'), 
+                          by = join_by('Domain', 'Phylum', 'Class', 'Order', 'Family', 
+                                       'Genus', 'Species', 'SGB', 'original_sample')) %>%
+  # Define if species in a sample of stool is ethanol resistant 
+  # Contition 1: present in both bulk microbiota sample and ethanol resistant fraction
+  # Condition 2: higher relative abudnance in EtOH sample than microbiota
+  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & value.y > value.x, 'Yes', 'No')) %>%
+  group_by(SGB) %>%
+  # Calculate the number of times a species was present in samples
+  reframe(no_present = n_distinct(name.y, na.rm = TRUE), 
+          # Caluclate how many times OTU was defined as part of EtOH fraction based on Conditions 1 & 2
+          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
+  # Species that have been defined as part of the ethanol resistant fraction in at least 5% of samples where they were found! 
+  # (to avoid mistakes of protocol and exclude highly abundant species that maybe were seen as ethanol resistant but just didn't get destoryed!)
+  filter(no_Yes > (no_present * 0.05)) %>%
+  pull(unique(SGB))
+
+# Save the file 
+write_tsv(filter(bacteria, SGB %in% etoh_species) %>% 
+            select(Species, SGB) %>% 
+            distinct() %>% 
+            mutate(is_etoh_resistant = TRUE), 'data/ethanol_resistant_SGB.tsv')
+
+# Properties of ethanol-resistant species which are they, relative abundance etc. 
+etoh <- filter(abund, SGB %in% etoh_species) %>% 
+  pivot_longer(values_to = 'value', names_to = 'name', cols = starts_with(c('M', 'SA', 'SB', 'SC', 'SD', 
+                                                                            'SE', 'SF', 'SG0', 'SH', 'SI'))) %>% 
+  left_join(metadata, by = join_by('name' == 'Group'))
+
+etoh %>% filter(value > 0, !is.na(person)) %>%  
+  ggplot(aes(x = Phylum, y = value, fill = person)) +
+  geom_boxplot() +
+  scale_y_log10() 
