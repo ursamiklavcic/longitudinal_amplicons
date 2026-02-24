@@ -579,6 +579,30 @@ n_otus_shared_plot
 ggsave('out/figures/shared_otus.svg', dpi = 600)
 
 # SPECIES 
+long_mpa %>% 
+  mutate(time_point = as.integer(substr(name, 3, 5)), 
+         pa = ifelse(value > 0, 1, 0)) %>%
+  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
+  reframe(present = sum(pa)) %>%  
+  filter(present > 11) %>% 
+  mutate(present = ifelse(present > 0, 1, 0)) %>% 
+  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
+  mutate(n_people = A+B+C+D+E+F+G+H+I, 
+         shared = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
+  group_by(is_ethanol_resistant, sporulation_ability, shared) %>%  
+  reframe(n = n_distinct(Species)) %>%
+  group_by(is_ethanol_resistant, sporulation_ability) %>%
+  mutate(prop = 100 * n / sum(n)) %>% 
+  ggplot(aes(y = paste0(is_ethanol_resistant,sporulation_ability), x = prop, fill = shared)) +
+  geom_col(position = "fill") + 
+  scale_fill_manual(values = c('#F2933F', '#3F9EF2')) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(y = "", x = "Species (%)", fill = '') +
+  theme(legend.position = 'bottom') +
+  guides(fill=guide_legend(nrow=1,byrow=TRUE))
+ggsave('out/figures/etoh_spore_shared_mpa.png', dpi=600)
+
+
 n_species_shared_plot <- long_mpa %>% 
   mutate(time_point = as.integer(substr(name, 3, 5)), 
          pa = ifelse(value > 0, 1, 0)) %>%
@@ -591,7 +615,7 @@ n_species_shared_plot <- long_mpa %>%
          shared = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
   group_by(is_ethanol_resistant, shared) %>%  
   reframe(n = n_distinct(Species)) %>%
-  group_by(is_ethanol_resistant) %>%
+  group_by(is_ethanol_resistant, ) %>%
   mutate(prop = 100 * n / sum(n)) %>% 
   ggplot(aes(y = is_ethanol_resistant, x = prop, fill = shared)) +
   geom_col(position = "fill") + 
@@ -621,3 +645,66 @@ ggarrange(n_otus_shared_plot + labs(tag = 'A'),
           legend = 'bottom', align = 'hv')
 ggsave('out/figures/shared_otu_mpa.svg', dpi = 600)
 
+# Fisher's exact test
+otu_shared <- long_otu %>% mutate(time_point = as.integer(substr(Group, 3, 5))) %>%
+  group_by(is_ethanol_resistant, person, name) %>%
+  reframe(present = sum(PA == 1)) %>%  
+  filter(present > 11) %>% 
+  mutate(present = ifelse(present > 0, 1, 0)) %>% 
+  select(name, person, present, is_ethanol_resistant) %>% 
+  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
+  mutate(n_people = A+B+C+D+E+F+G+H+I, 
+         n_people = ifelse(n_people == 1, '1individual', '>1individual')) %>% 
+  group_by(is_ethanol_resistant, n_people) %>% 
+  reframe(n_otu = n_distinct(name)) %>%  
+  pivot_wider(names_from = 'n_people', values_from = 'n_otu') %>% 
+  column_to_rownames("is_ethanol_resistant") 
+
+fisher.test(otu_shared)
+
+# Fisher's Exact Test for Count Data
+# 
+# data:  otu_shared
+# p-value = 7.036e-05
+# alternative hypothesis: true odds ratio is not equal to 1
+# 95 percent confidence interval:
+#  0.3567042 0.7207195
+# sample estimates:
+# odds ratio 
+#  0.5087137 
+
+
+species_shared <- long_mpa %>% 
+  mutate(time_point = as.integer(substr(name, 3, 5)), 
+         pa = ifelse(value > 0, 1, 0)) %>%
+  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
+  reframe(present = sum(pa)) %>%  
+  filter(present > 11) %>% 
+  mutate(present = ifelse(present > 0, 1, 0)) %>% 
+  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
+  mutate(n_people = A+B+C+D+E+F+G+H+I, 
+         shared = ifelse(n_people == 1, '1individual', '>1individual')) %>% 
+  group_by(is_ethanol_resistant, sporulation_ability, shared) %>%  
+  reframe(n = n_distinct(Species)) %>% 
+  pivot_wider(names_from = 'shared', values_from = 'n') %>% 
+  mutate(etoh_spore = paste0(is_ethanol_resistant, sporulation_ability)) %>% 
+  select(-c(is_ethanol_resistant, sporulation_ability)) %>% 
+  column_to_rownames("etoh_spore") 
+
+# do proportion of species present in >1 individual differs among the 4 communities?
+chisq.test(species_shared)
+# p < 0.001 = YES 
+
+# All pairwise combinations of rows
+combs <- combn(rownames(species_shared), 2, simplify = FALSE)
+
+pvals <- sapply(combs, function(pair) {
+  sub_tab <- species_shared[pair, , drop = FALSE]
+  fisher.test(sub_tab)$p.value
+})
+
+names(pvals) <- sapply(combs, paste, collapse = "_vs_")
+
+# Raw and adjusted p-values (Benjamini–Hochberg)
+pvals
+p.adjust(pvals, method = "BH")

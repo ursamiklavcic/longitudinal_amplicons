@@ -134,13 +134,13 @@ bray_mpa <- calculate_dist(etoh_spore, 'bray') %>%
   rbind(calculate_dist(netoh_nspore, 'bray'))
 
 within_between_mpa <- bray_mpa %>%
-  ggplot(aes(x=community, y=median_value, fill= community)) +
+  ggplot(aes(x=sporulation_ability, y=median_value, fill= community)) +
   geom_boxplot() +
   scale_fill_manual(values = c('#f0a336', '#F06836','#3CB371', '#3CA1B3')) +
   #scale_alpha_manual(values = c('Non-spore-former' = 1, 'Spore-former' = 0.5)) +
-  facet_wrap(~same_person, nrow = 2) +
+  facet_wrap(~same_person, nrow = 1) +
   labs(x = '', y = 'Median Bray-Curtis dissimilarity', fill = '') +
-  theme(legend.position = 'bottom', axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  theme(legend.position = 'bottom') +
   guides(fill = guide_legend(ncol = 2)) 
 within_between_mpa
 ggsave('out/figures/BC_between_within_mpa.svg', dpi = 600)
@@ -229,6 +229,8 @@ persistence_otu <- long_otu %>%
   unique()
 
 # Shotgun 
+long_mpa <- readRDS('data/r_data/long_mpa.RDS')
+
 persistence_mpa <- long_mpa %>%
   filter(biota == 'untreated sample') %>% 
   mutate(time_point = as.integer(substr(name, 3, 5)), 
@@ -255,7 +257,7 @@ persistence <- rbind(persistence_mpa %>%  mutate(method = 'metagenomic data'),
 
 # PLOTs
 persistence_plot <- ggplot(persistence, aes(x = prevalence, y = per_otus, color = community)) +
-  geom_point(size = 3, alpha = 0.3) +
+  geom_point(size = 3, alpha = 0.5) +
   geom_smooth(method = "loess", formula = y ~ x, se = T, linewidth = 1.5) +
   scale_color_manual(values = c('#f0a336', '#F06836','#3CB371', '#3CA1B3'))+
   labs(x='Within-individual persistence\n [% of time points present]', y= 'Taxa per individual\n [% of taxa]', color = '') +
@@ -304,13 +306,13 @@ summary(fit2)
 
 time_persist <- ggarrange(time_BC_plot + labs(tag = 'B'), 
           persistence_plot + labs(tag = 'C'), 
-          nrow = 2, common.legend = T, 
-          legend = 'bottom')
-
+          nrow = 2, legend = 'none')
+time_persist
 ggarrange(within_between_mpa + labs (tag = 'A'), 
-          time_persist, common.legend = T, 
-          nrow = 1, widths = c(0.6, 1))
+          time_persist, common.legend = T,
+          legend = 'bottom',
+          nrow = 1, widths = c(0.9, 1))
 
 ggsave('out/figures/figure2.svg', dpi = 600)
-
+ggsave('out/figures/figure2_org.png', dpi=600)
 # OTUs in 5_between_within_otu.R
