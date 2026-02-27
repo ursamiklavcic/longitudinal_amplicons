@@ -228,3 +228,29 @@ genus <- pre_abund %>%
   group_by(is_ethanol_resistant, sporulation_ability, Genus) %>% 
   reframe(n = n_distinct(Species))
 
+# Number of sporulation_genes for ethanol-resistant spore.formers /non-resistant etc. all 4 groups (Supplement data)
+pre_abund %>% 
+  filter(!is.na(sporulation_ability)) %>% 
+  select(is_ethanol_resistant, sporulation_ability, Species, n_genes) %>% 
+  unique() %>% 
+  ggplot(aes(y = sporulation_ability, x = n_genes, fill = is_ethanol_resistant)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c('#f0a336', '#3CB371')) +
+  geom_vline(xintercept = 33) +
+  labs(x = '# sporulation genes', y = '')
+ggsave('out/figures/n_spore_genes_across_groups.png')
+
+# is there a significantlly different number of spore genes in etoh-resist/non-resist spore-formers
+stat1 <- pre_abund %>%  filter(sporulation_ability == 'Spore-former') %>% 
+  select(is_ethanol_resistant, Species, n_genes) %>% 
+  unique()
+
+t.test(filter(stat1, is_ethanol_resistant == 'Ethanol-resistant')$n_genes, 
+       filter(stat1, is_ethanol_resistant == 'Non ethanol-resistant')$n_genes, paired = F)
+
+wilcox.test(n_genes ~ is_ethanol_resistant, data = stat1)
+
+# Different visualisation
+
+
+  

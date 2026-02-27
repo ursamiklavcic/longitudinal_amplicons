@@ -316,3 +316,4 @@ ggarrange(within_between_mpa + labs (tag = 'A'),
 ggsave('out/figures/figure2.svg', dpi = 600)
 ggsave('out/figures/figure2_org.png', dpi=600)
 # OTUs in 5_between_within_otu.R
+

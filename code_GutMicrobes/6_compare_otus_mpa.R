@@ -12,7 +12,10 @@ library(ggplot2)
 library(lme4)
 
 set.seed(96)
-theme_set(theme_bw(base_size = 14))
+theme_set(theme_bw(base_size = 12) +
+            theme(plot.title   = element_text(size = 11),
+                  axis.title   = element_text(size = 12),
+                  axis.text    = element_text(size = 11)))
 
 # OTU data 
 otutab <- readRDS('data/r_data/otutabEM.RDS')
@@ -111,11 +114,11 @@ long_otu %>% group_by(original_sample, is_ethanol_resistant) %>%
   reframe(mean = mean(sum), 
           sd = sd(sum))
 
-add_for_comparison_otu <- data.frame(is_ethanol_resistant = 'Ethanol-resistant',
-                                    Phylum = 'Chloroflexota', 
-                                    no_otus = 0, 
-                                    sum = 0, 
-                                    per = 0)
+add_for_comparison_otu <- data.frame(is_ethanol_resistant = c('Ethanol-resistant', 'Ethanol-resistant'), 
+                                    Phylum = c('Chloroflexota', 'Candidatus Melainabacteria'), 
+                                    no_otus = c(0,0), 
+                                    sum = c(0,0), 
+                                    per = c(0,0))
 
 per_otu <- long_otu %>%
   group_by(is_ethanol_resistant, Phylum) %>%
@@ -124,7 +127,7 @@ per_otu <- long_otu %>%
   mutate(sum = sum(no_otus), 
          per = (no_otus/sum)*100) %>% 
   rbind(add_for_comparison_otu) %>% 
-  mutate(Phylum = factor(Phylum, levels = c('unclassified Bacteria', 'Deferribacterota','Synergistota', 'Mycoplasmatota','Chloroflexota', 
+  mutate(Phylum = factor(Phylum, levels = c('unclassified Bacteria', 'Deferribacterota','Synergistota', 'Candidatus Melainabacteria', 'Mycoplasmatota','Chloroflexota', 
                                             'Verrucomicrobiota','Saccharibacteria', 'Lentisphaerota', 'Fusobacteriota', 
                                             'Pseudomonadota', 'Actinomycetota', 'Bacteroidota', 'Bacillota' ))) %>% 
   ggplot(aes(x = per, y = Phylum)) + 
@@ -132,12 +135,13 @@ per_otu <- long_otu %>%
   geom_text(aes(label = no_otus, x = per, y = Phylum), color = 'black', inherit.aes = F) +
   scale_fill_manual(values = c( '#f0a336', '#3CB371')) +
   labs(x = '% OTUs', y = '', fill = '') +
-  theme_minimal(base_size = 14) +
-  guides(color = "none", fill = "none") +
+  
+  #guides(color = "none", fill = "none") +
   scale_y_discrete(labels = c(
     expression("unclassified " * italic("Bacteria")),
     expression(italic("Deferribacterota")),
     expression(italic("Synergistota")),
+    expression(italic("Candidatus") * " Melainabacteria"),
     expression(italic("Mycoplasmatota")), 
     expression(italic("Chloroflexota")),
     expression(italic("Verrucomicrobiota")),
@@ -147,7 +151,14 @@ per_otu <- long_otu %>%
     expression(italic("Pseudomonadota")),
     expression(italic("Actinomycetota")),
     expression(italic("Bacteroidota")),
-    expression(italic("Bacillota"))))
+    expression(italic("Bacillota")))) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = 'bottom', 
+        plot.title   = element_text(size = 12),
+        axis.title   = element_text(size = 12),
+        axis.text    = element_text(size = 11), 
+        legend.text = element_text(size = 11)) +
+  ggtitle('16S amplicon data')
 per_otu
 
 # Percentages s for text 
@@ -191,10 +202,10 @@ etoh_species <- full_join(bacteria %>% filter(substr(name, 1, 1) == 'M'),
 
 long_mpa <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
   rename_with(~ str_remove(., '^profiled_'), starts_with('profiled_')) %>%
-  filter(grepl('s__', clade_name), !grepl('t__', clade_name)) %>% 
-  left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, clade_name), by = 'clade_name') %>% 
-  pivot_longer(-c(clade_name, PA, n_genes, sporulation_ability)) %>% 
-  #mutate(clade_name = str_remove_all(clade_name, '[a-zA-Z]__')) %>%
+  filter(grepl('s__', clade_name), grepl('t__', clade_name)) %>% 
+  # left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, clade_name), by = 'clade_name') %>% 
+  # pivot_longer(-c(clade_name, PA, n_genes, sporulation_ability)) %>% 
+  pivot_longer(-clade_name) %>% 
   separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'),
            sep="\\|") %>% 
   mutate(Phylum = ifelse(Phylum == 'p__Firmicutes', 'p__Bacillota', Phylum), 
@@ -206,7 +217,8 @@ long_mpa <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_t
          Genus = str_remove_all(Genus, 'g__'), 
          Species = str_remove_all(Species, 's__')) %>% 
   filter(name != 'MC013') %>% 
-  filter(!is.na(sporulation_ability)) %>%  
+  filter(Domain == 'Bacteria') %>% 
+  #filter(!is.na(sporulation_ability)) %>%  
   left_join(metadata, by = join_by('name' == 'Group')) %>% 
   mutate(Phylum = case_when(
     Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
@@ -219,44 +231,42 @@ long_mpa <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_t
     Phylum == 'Lentisphaerae' ~ 'Lentisphaerota',
     Phylum == 'Synergistetes' ~ 'Synergistota',
     Phylum == 'Candidatus_Saccharibacteria' ~ 'Saccharibacteria', 
+    Phylum == 'Candidatus_Melainabacteria' ~ 'Candidatus Melainabacteria', 
+    Phylum == 'Tenericutes' ~ 'Mycoplasmatota', 
     TRUE ~ Phylum )) %>% 
   mutate(is_ethanol_resistant = ifelse(Species %in% etoh_species, 'Ethanol-resistant', 'Non ethanol-resistant')) %>% 
   filter(biota == 'untreated sample')
 
-# Which species are sopreforming? 
-sporeforming <- long_mpa %>%  
-  group_by(sporulation_ability, Phylum) %>% 
-  reframe(n_species = n_distinct(Species))
 
-add_for_comparison_mpa <- data.frame(is_ethanol_resistant = c('Ethanol-resistant', 'Ethanol-resistant'),
-                                     sporulation_ability = c('Spore-former', 'Spore-former'), 
-                                     Phylum = c('Mycoplasmatota', 'Deferribacterota'), 
-                                     n_species = c(0,0), 
-                                     sum = c(0,0), 
-                                     per = c(0,0))
+
+add_for_comparison_mpa <- data.frame(is_ethanol_resistant = 'Ethanol-resistant',
+                                     Phylum = 'Deferribacterota', 
+                                     n_species = 0, 
+                                     sum = 0, 
+                                     per = 0)
 
 # What if I look into ethanol resistant and spore-forming? 
 per_mpa <- long_mpa %>% 
-  group_by(is_ethanol_resistant, sporulation_ability, Phylum) %>%
+  group_by(is_ethanol_resistant, Phylum) %>%
   reframe(n_species = n_distinct(Species)) %>% 
   group_by(Phylum) %>%
   mutate(sum = sum(n_species), 
          per = (n_species/sum)*100) %>% 
   rbind(add_for_comparison_mpa) %>% 
-  mutate(Phylum = factor(Phylum, levels = c('unclassified Bacteria', 'Deferribacterota','Synergistota', 'Mycoplasmatota','Chloroflexota', 
+  mutate(Phylum = factor(Phylum, levels = c('unclassified Bacteria', 'Deferribacterota','Synergistota', 'Candidatus Melainabacteria', 'Mycoplasmatota','Chloroflexota', 
                                              'Verrucomicrobiota','Saccharibacteria', 'Lentisphaerota', 'Fusobacteriota', 
                                               'Pseudomonadota', 'Actinomycetota', 'Bacteroidota', 'Bacillota' ))) %>% 
   ggplot(aes(x = per, y = Phylum)) + 
-  geom_col(aes(fill = is_ethanol_resistant, alpha = sporulation_ability)) +
+  geom_col(aes(fill = is_ethanol_resistant)) +
   geom_text(aes(label = n_species, x = per, y = Phylum), color = 'black', inherit.aes = F) +
   scale_fill_manual(values = c( '#f0a336', '#3CB371')) +
-  scale_alpha_manual(values = c('Non-spore-former' = 1, 'Spore-former' = 0.5)) +
-  labs(x = '% species', y = '', fill = '', alpha = '') +
-  theme_minimal(base_size = 14) +
+  #scale_alpha_manual(values = c('Non-spore-former' = 1, 'Spore-former' = 0.5)) +
+  labs(x = '% species', y = '', fill = '') +
   scale_y_discrete(labels = c(
     expression("unclassified " * italic("Bacteria")),
     expression(italic("Deferribacterota")),
     expression(italic("Synergistota")),
+    expression(italic("Candidatus") * " Melainabacteria"),
     expression(italic("Mycoplasmatota")), 
     expression(italic("Chloroflexota")),
     expression(italic("Verrucomicrobiota")),
@@ -267,7 +277,71 @@ per_mpa <- long_mpa %>%
     expression(italic("Actinomycetota")),
     expression(italic("Bacteroidota")),
     expression(italic("Bacillota")))) +
-  theme(legend.position = 'bottom') 
+  theme_minimal(base_size = 12) +
+  theme(legend.position = 'bottom', 
+        plot.title   = element_text(size = 12),
+        axis.title   = element_text(size = 12),
+        axis.text    = element_text(size = 11), 
+        legend.text = element_text(size = 11)) +
+  ggtitle('metagenomic data')
+per_mpa
+
+# paired t-test for each Phylum if percentages of eth-resist/non-resist differ between OTU and species data ž
+per_both <- long_mpa %>% 
+  group_by(is_ethanol_resistant, Phylum) %>%
+  reframe(n_species = n_distinct(Species)) %>% 
+  group_by(Phylum) %>%
+  mutate(sum = sum(n_species), 
+         per = (n_species/sum)*100) %>% 
+  rbind(add_for_comparison_mpa) %>% 
+  full_join(long_otu %>%
+              group_by(is_ethanol_resistant, Phylum) %>%
+              reframe(no_otus = n_distinct(name)) %>%
+              group_by(Phylum) %>%
+              mutate(sum = sum(no_otus), 
+                     per = (no_otus/sum)*100) %>% 
+              rbind(add_for_comparison_otu), by = c('is_ethanol_resistant', 'Phylum')) 
+
+t.test(filter(per_both, is_ethanol_resistant == 'Ethanol-resistant')$per.x, 
+       filter(per_both, is_ethanol_resistant == 'Ethanol-resistant')$per.y, 
+       paired = TRUE)
+
+t.test(filter(per_both, is_ethanol_resistant == 'Non ethanol-resistant')$per.x, 
+       filter(per_both, is_ethanol_resistant == 'Non ethanol-resistant')$per.y, 
+       paired = TRUE)
+
+
+# Which species are sopreforming? 
+long_mpa <- long_mpa %>%  
+  mutate(Species = str_replace_all(Species, '_', ' ')) %>% 
+  left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, Species), by = 'Species')
+  
+sporeforming <- long_mpa %>%  
+  group_by(sporulation_ability, Phylum) %>% 
+  reframe(n_species = n_distinct(Species))
+
+
+spore_per <- long_mpa %>% 
+  filter(Phylum == 'Bacillota', !is.na(sporulation_ability)) %>% 
+  group_by(is_ethanol_resistant, sporulation_ability, Phylum) %>%
+  reframe(n_species = n_distinct(Species)) %>% 
+  group_by(Phylum) %>%
+  mutate(sum = sum(n_species), 
+         per = (n_species/sum)*100) %>% 
+  ggplot(aes(x = per, y = sporulation_ability)) + 
+  geom_col(aes(fill = is_ethanol_resistant)) +
+  geom_text(aes(label = n_species, x = per, y = sporulation_ability), color = 'black', inherit.aes = F) +
+  scale_fill_manual(values = c( '#f0a336', '#3CB371')) +
+  #scale_alpha_manual(values = c('Non-spore-former' = 1, 'Spore-former' = 0.5)) +
+  labs(x = '% species', y = '', fill = '') +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = 'bottom', 
+        plot.title   = element_text(size = 12),
+        axis.title   = element_text(size = 12),
+        axis.text    = element_text(size = 11), 
+        legend.text = element_text(size = 11)) +
+  guides(fill = "none") 
+spore_per
 
 # Percentages for text 
 long_mpa %>% 
@@ -345,13 +419,6 @@ sgb_spore %>%  filter(is.na(sporulation_ability)) %>%
   reframe(mean = mean(value), 
           sd = sd(value))
 
-# Figure 1 all together 
-fig1B <- ggarrange(per_otu, 
-          per_mpa + theme(axis.text.y = element_blank()),
-          legend = 'bottom', common.legend = F, align = 'h', widths = c(1, .7))
-
-fig1B
-ggsave('out/figures/figure1B.svg', dpi = 600)
 
 # Beta diversity 
 # OTU 
@@ -395,8 +462,35 @@ beta %>%
   geom_point(size = 4) +
   facet_wrap(~method, scales = 'free') +
   labs(x = '', y = '', color = 'Individual')
-
 ggsave('out/figures/figure1A_v1.svg', dpi=600)
+
+# 1A_v2
+beta_otu <- nmds_otu %>% 
+  left_join(metadata, by = 'Group') %>%  
+  ggplot(aes(x = NMDS1, y = NMDS2, color = person)) +
+  geom_point(size = 4) +
+  labs(x = '', y = '', color = 'Individual', title = '16S amplicon data') +
+  guides(color = guide_legend(nrow = 1)) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = 'bottom', 
+        plot.title   = element_text(size = 12),
+        axis.title   = element_text(size = 12),
+        axis.text    = element_text(size = 11), 
+        legend.text = element_text(size = 11)) 
+  
+beta_mpa <- nmds_mpa %>% 
+  left_join(metadata, by = 'Group') %>%  
+  ggplot(aes(x = NMDS1, y = NMDS2, color = person)) +
+  geom_point(size = 4) +
+  labs(x = '', y = '', color = 'Individual', title = 'metagenomic data') +
+  guides(color = guide_legend(nrow = 1)) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = 'bottom', 
+        plot.title   = element_text(size = 12),
+        axis.title   = element_text(size = 12),
+        axis.text    = element_text(size = 11), 
+        legend.text = element_text(size = 11)) 
+
 
 # Do Individuals explain the most variation? 
 adonis2(dist_otu  ~ person, data = filter(metadata, substr(Group, 1, 1) == 'M'), permutations = 999)   
@@ -404,7 +498,6 @@ adonis2(dist_mpa  ~ person, data = filter(metadata, substr(Group, 1, 1) == 'M'),
 
 # Is clustering similar between amplicon and shotgun data? 
 # Procrustes roatation (align ordinations) 
-
 sc_otu <- scores(nmds_otu1, display = "sites") %>%
   as.data.frame() %>%
   mutate(sample = rownames(.))
@@ -435,25 +528,50 @@ proc_test <- protest(X, Y, permutations = 999)
 summary(proc)
 proc_test
 
-# Beta both together 
-fig1A <- beta %>% 
-  ggplot(aes(x = NMDS1, y = NMDS2, color = person, shape = method)) +
-  geom_point(size = 4) +
-  labs(x = '', y = '', color = 'Individual', shape = 'Sequencing method') +
-  theme(legend.position = 'bottom') +
-  guides(color = guide_legend(nrow = 3), 
-         shape = guide_legend(nrow = 2))
-fig1A
-ggsave('out/figures/figure1A.svg', dpi = 600)
+# # Beta both together 
+# fig1A <- beta %>% 
+#   ggplot(aes(x = NMDS1, y = NMDS2, color = person, shape = method)) +
+#   geom_point(size = 4) +
+#   labs(x = '', y = '', color = 'Individual', shape = 'Sequencing method') +
+#   theme(legend.position = 'bottom') +
+#   guides(color = guide_legend(nrow = 3), 
+#          shape = guide_legend(nrow = 2))
+# fig1A
+# ggsave('out/figures/figure1A.svg', dpi = 600)
 
+# Beta diveristy at the level of genus 
 
-# Figure 1 all together
-ggarrange(fig1A + labs(tag = 'A'), 
+# # Figure 1 all together
+# ggarrange(fig1A + labs(tag = 'A'), 
+#           fig1B + labs(tag = 'B'), 
+#           common.legend = F, legend = 'bottom', 
+#           widths = c(0.5, 1))
+# ggsave('out/figures/figure1.svg', dpi=600)
+
+# Figure 1_v2 
+
+# Figure 1 all together 
+fig1B <- ggarrange(per_otu, 
+                   per_mpa + theme(axis.text.y = element_blank()),
+                   legend = 'bottom', common.legend = T, align = 'h', widths = c(1, .7))
+
+fig1B
+
+beta_both <- ggarrange(beta_otu, beta_mpa, legend = 'bottom', 
+                       common.legend = T) 
+beta_both
+
+AC <- ggarrange(beta_both + labs(tag = 'A'), 
+                spore_per+ labs(tag = 'C'), 
+                nrow = 2, heights = c(1, 0.3))
+
+AC
+
+ggarrange(AC, 
           fig1B + labs(tag = 'B'), 
-          common.legend = F, legend = 'bottom', 
-          widths = c(0.5, 1))
-ggsave('out/figures/figure1.svg', dpi=600)
-
+          common.legend = F, nrow = 1, 
+          widths = c(0.8, 1))
+ggsave('out/figures/figure1_v2.svg', dpi=600)
 
 # Supplement Figure 
 # Alpha diveristy between ethanol-resistant and non-resistant in amplicon/shotgun data
@@ -606,24 +724,26 @@ ggsave('out/figures/etoh_spore_shared_mpa.png', dpi=600)
 n_species_shared_plot <- long_mpa %>% 
   mutate(time_point = as.integer(substr(name, 3, 5)), 
          pa = ifelse(value > 0, 1, 0)) %>%
-  group_by(is_ethanol_resistant, person, Species) %>%
+  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
   reframe(present = sum(pa)) %>%  
   filter(present > 11) %>% 
   mutate(present = ifelse(present > 0, 1, 0)) %>% 
   pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
   mutate(n_people = A+B+C+D+E+F+G+H+I, 
          shared = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
-  group_by(is_ethanol_resistant, shared) %>%  
+  group_by(is_ethanol_resistant, sporulation_ability, shared) %>%  
   reframe(n = n_distinct(Species)) %>%
-  group_by(is_ethanol_resistant, ) %>%
+  group_by(is_ethanol_resistant) %>%
   mutate(prop = 100 * n / sum(n)) %>% 
-  ggplot(aes(y = is_ethanol_resistant, x = prop, fill = shared)) +
+  ggplot(aes(y = paste0(is_ethanol_resistant, sporulation_ability), x = prop, fill = shared)) +
   geom_col(position = "fill") + 
+  #geom_text(aes(x = prop/2,label = n)) +
   scale_fill_manual(values = c('#F2933F', '#3F9EF2')) +
   scale_x_continuous(labels = scales::percent) +
   labs(y = "", x = "Species (%)", fill = '') +
   theme(legend.position = 'bottom') +
   guides(fill=guide_legend(nrow=1,byrow=TRUE))
+n_species_shared_plot
 
 # For the table of ethanol-resistant and spore-forming sharing 
 long_mpa %>% 
