@@ -15,7 +15,8 @@ set.seed(96)
 theme_set(theme_bw(base_size=14))
 
 # Import data 
-metadata <- readRDS('data/r_data/metadata.RDS')
+metadata <- read.csv('data/metadata.csv', sep = ';', header = T) %>% 
+  mutate(biota = ifelse(biota == 'bulk microbiota', 'untreated sample', 'ethanol treated sample'))
 otutabEM <- readRDS('data/r_data/otutabEM.RDS')
 taxtab <- readRDS('data/r_data/taxtab.RDS')
 ddPCR <- readRDS('data/r_data/ddPCR.RDS')
@@ -198,20 +199,136 @@ etoh_species <- full_join(bacteria %>% filter(substr(name, 1, 1) == 'M'),
   # (to avoid mistakes of protocol and exclude highly abundant species that maybe were seen as ethanol resistant but just didn't get destoryed!)
   filter(no_Yes > (no_present * 0.05)) %>%
   pull(unique(SGB))
+length(unique(etoh_species))
 
-# Save the file 
-write_tsv(filter(bacteria, SGB %in% etoh_species) %>% 
-            select(Species, SGB) %>% 
-            distinct() %>% 
-            mutate(is_etoh_resistant = TRUE), 'data/ethanol_resistant_SGB.tsv')
+only_etoh_sgb <- full_join(bacteria %>% filter(substr(name, 1, 1) == 'M'), 
+                           bacteria %>% filter(substr(name, 1, 1) == 'S'), 
+                           by = join_by('Domain', 'Phylum', 'Class', 'Order', 'Family', 
+                                        'Genus', 'Species', 'SGB', 'original_sample')) %>%
+  mutate(is_etoh_resistant = ifelse((value.x == 0 | is.na(value.x)) & value.y > 0, 'Only ethanol treated samples', 'Other')) %>% 
+  filter(is_etoh_resistant == 'Only ethanol treated samples') %>%
+  pull(unique(SGB))
+length(unique(only_etoh_sgb))
+
+
+uncertain_sgb <- full_join(bacteria %>% filter(substr(name, 1, 1) == 'M'), 
+                           bacteria %>% filter(substr(name, 1, 1) == 'S'), 
+                           by = join_by('Domain', 'Phylum', 'Class', 'Order', 'Family', 
+                                        'Genus', 'Species', 'SGB', 'original_sample')) %>%
+  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & value.y > value.x, 'Yes', 'No')) %>%
+  group_by(SGB) %>%
+  reframe(no_present = n_distinct(name.y, na.rm = TRUE), 
+          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
+  # Filter OTUs that were detected as EtOH resistant at least once, but were detected as such in less than 5% of samples, to exclude them from the analysis 
+  filter(no_Yes > 1) %>%
+  filter(no_Yes < (no_present * 0.05)) %>%
+  filter(!SGB %in% only_etoh_sgb) %>% 
+  pull(unique(SGB))
+length(unique(uncertain_sgb))
+
+
+etoh_sgb <- bacteria %>% 
+  mutate(is_ethanol_resistant = ifelse(SGB %in% etoh_species, 'Ethanol-resistant', 
+                                       ifelse(SGB %in% uncertain_sgb, 'Uncertain', 
+                                              ifelse(SGB %in% only_etoh_sgb, 'Only ethanol treated samples', 'Non ethanol-resistant')))) %>% 
+  select(Domain, Phylum, Class, Order, Family, Genus, Species, SGB, is_ethanol_resistant) %>% 
+  distinct()
+
+write_tsv(etoh_sgb, 'data/shotgun_data/ethanol_resistant_SGB.tsv')
+
+etoh_sgb %>% 
+  group_by(is_ethanol_resistant) %>% 
+  reframe(n = n_distinct(SGB))
 
 # Properties of ethanol-resistant species which are they, relative abundance etc. 
-etoh <- filter(abund, SGB %in% etoh_species) %>% 
-  pivot_longer(values_to = 'value', names_to = 'name', cols = starts_with(c('M', 'SA', 'SB', 'SC', 'SD', 
-                                                                            'SE', 'SF', 'SG0', 'SH', 'SI'))) %>% 
-  left_join(metadata, by = join_by('name' == 'Group'))
+etoh <- full_join(bacteria, etoh_sgb, by = c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'SGB')) %>% 
+  left_join(metadata, by = 'original_sample', relationship = 'many-to-many') %>% 
+  filter(biota == 'untreated sample' & is_ethanol_resistant == 'Ethanol-resistant')
 
 etoh %>% filter(value > 0, !is.na(person)) %>%  
   ggplot(aes(x = Phylum, y = value, fill = person)) +
   geom_boxplot() +
   scale_y_log10() 
+
+etoh %>% 
+  group_by(Phylum, name) %>% 
+  reframe(rel = sum(value)) %>% 
+  group_by(Phylum) %>% 
+  reframe(rel = mean(rel))
+
+
+# Make long form MPA data
+sporulation_ability <- read.table('data/shotgun_data/sporulation_ability2021.tsv', sep = '\t', header = TRUE) %>% 
+  as_tibble()
+metadata <- readRDS('data/r_data/metadata.RDS')
+etoh_species <- read.table('data/shotgun_data/ethanol_resistant_SGB.tsv', sep = '\t', header = T)
+
+
+abund <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
+  rename_with(~ str_remove(., '^profiled_'), starts_with('profiled_')) %>%
+  mutate(clade_name2 = clade_name) %>% 
+  filter(grepl('s__', clade_name), !grepl('t__', clade_name)) %>% 
+  left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, clade_name), by = 'clade_name') %>% 
+  pivot_longer(-c(clade_name, clade_name2, PA, n_genes, sporulation_ability)) %>% 
+  #mutate(clade_name = str_remove_all(clade_name, '[a-zA-Z]__')) %>%
+  separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'),
+           sep="\\|") %>% 
+  mutate(Phylum = ifelse(Phylum == 'p__Firmicutes', 'p__Bacillota', Phylum), 
+         Domain = str_remove_all(Domain, 'k__'), 
+         Phylum = str_remove_all(Phylum, 'p__'), 
+         Class = str_remove_all(Class, 'c__'), 
+         Order = str_remove_all(Order, 'o__'), 
+         Family = str_remove_all(Family, 'f__'), 
+         Genus = str_remove_all(Genus, 'g__'), 
+         Species = str_remove_all(Species, 's__')) %>% 
+  filter(name != 'MC013') %>% 
+  left_join(metadata, by = join_by('name' == 'Group')) %>% 
+  left_join(etoh_species, by = c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'), relationship = 'many-to-many')
+
+# Create a tab, with the four groups separated in each sample: 
+etoh_spore <- filter(abund, substr(name, 1, 1) == 'M' & 
+                       is_ethanol_resistant == 'Ethanol-resistant' & 
+                       sporulation_ability == 'Spore-former') %>%
+  mutate(name = paste0(name, "-ES"), community = 'Ethanol-resistant spore-formers')
+length(unique(etoh_spore$Species))
+# 73
+
+etoh_nspore <- filter(abund, substr(name, 1, 1) == 'M' & 
+                        is_ethanol_resistant == 'Ethanol-resistant' & 
+                        sporulation_ability == 'Non-spore-former') %>%
+  mutate(name = paste0(name, "-ENS"), community = 'Ethanol-resistant non-spore-formers')
+length(unique(etoh_nspore$Species))
+#50
+
+netoh_spore <-  filter(abund, substr(name, 1, 1) == 'M' & 
+                         is_ethanol_resistant == 'Non ethanol-resistant' & 
+                         sporulation_ability == 'Spore-former') %>%
+  mutate(name = paste0(name, "-NES"), community = 'Non ethanol-resistant spore-formers')
+length(unique(netoh_spore$Species))
+#105
+
+
+netoh_nspore <- filter(abund, substr(name, 1, 1) == 'M' & 
+                         is_ethanol_resistant == 'Non ethanol-resistant' & 
+                         sporulation_ability == 'Non-spore-former') %>%
+  mutate(name = paste0(name, "-NENS"), community = 'Non ethanol-resistant non-spore-formers')
+length(unique(netoh_nspore$Species))
+#158
+
+##
+long_mpa <- rbind(etoh_spore, netoh_spore, etoh_nspore, netoh_nspore) %>% 
+  mutate(Phylum = case_when(
+    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
+    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
+    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
+    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
+    Phylum == 'Verrucomicrobia' ~ 'Verrucomicrobiota',
+    Phylum == 'Chloroflexi' ~ 'Chloroflexota',
+    Phylum == 'Fusobacteria' ~ 'Fusobacteriota',
+    Phylum == 'Lentisphaerae' ~ 'Lentisphaerota',
+    Phylum == 'Synergistetes' ~ 'Synergistota',
+    Phylum == 'Candidatus_Saccharibacteria' ~ 'Saccharibacteria', 
+    Phylum == 'Candidatus_Melainabacteria' ~ 'Candidatus Melainabacteria', 
+    Phylum == 'Tenericutes' ~ 'Mycoplasmatota', 
+    TRUE ~ Phylum ))
+saveRDS(long_mpa, 'data/r_data/long_mpa.RDS')

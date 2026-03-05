@@ -82,7 +82,8 @@ all <- full_join(otus, species,by = join_by('Group' == 'name')) %>%
   full_join(genus_meta, by = join_by('Group' == 'name')) %>% 
   full_join(genus_otu, by = 'Group') %>% 
   left_join(metadata, by = 'Group') %>% 
-  filter(!is.na(biota))
+  filter(!is.na(biota)) %>% 
+  mutate(biota = factor(biota, levels = c('untreated sample', 'ethanol treated sample')))
 
 all %>% ggplot(aes(y = genus_otus, x = genus_meta, color = biota)) +
   geom_point(size = 3) +
@@ -115,12 +116,12 @@ long_otu %>% group_by(original_sample, is_ethanol_resistant) %>%
           sd = sd(sum))
 
 add_for_comparison_otu <- data.frame(is_ethanol_resistant = c('Ethanol-resistant', 'Ethanol-resistant'), 
-                                    Phylum = c('Chloroflexota', 'Candidatus Melainabacteria'), 
-                                    no_otus = c(0,0), 
-                                    sum = c(0,0), 
-                                    per = c(0,0))
+                                     Phylum = c('Chloroflexota', 'Candidatus Melainabacteria'), 
+                                     no_otus = c(0,0), 
+                                     sum = c(0,0), 
+                                     per = c(0,0))
 
-per_otu <- long_otu %>%
+per_otu <- long_otu %>% filter(!is.na(Phylum)) %>% 
   group_by(is_ethanol_resistant, Phylum) %>%
   reframe(no_otus = n_distinct(name)) %>%
   group_by(Phylum) %>%
@@ -180,33 +181,14 @@ long_otu %>%
   filter(sum > 2)
 
 # Shotgun data
-# Which species in shotgun data are ethanol resistant? 
-etoh_species <- full_join(bacteria %>% filter(substr(name, 1, 1) == 'M'), 
-                          bacteria %>% filter(substr(name, 1, 1) == 'S'), 
-                          by = join_by('Domain', 'Phylum', 'Class', 'Order', 'Family', 
-                                       'Genus', 'Species', 'SGB', 'original_sample')) %>%
-  # Define if species in a sample of stool is ethanol resistant 
-  # Contition 1: present in both untreated sample and ethanol resistant fraction
-  # Condition 2: higher relative abudnance in EtOH sample than untreated
-  mutate(is_etoh_resistant = ifelse(value.x > 0 & value.y > 0 & value.y > value.x, 'Yes', 'No')) %>%
-  group_by(Species) %>%
-  # Calculate the number of times a species was present in samples
-  reframe(no_present = n_distinct(name.y, na.rm = TRUE), 
-          # Caluclate how many times OTU was defined as part of EtOH fraction based on Conditions 1 & 2
-          no_Yes = ceiling(sum(is_etoh_resistant == 'Yes', na.rm = TRUE))) %>%
-  # Species that have been defined as part of the ethanol resistant fraction in at least 5% of samples where they were found! 
-  # (to avoid mistakes of protocol and exclude highly abundant species that maybe were seen as ethanol resistant but just didn't get destoryed!)
-  filter(no_Yes > (no_present * 0.05)) %>%
-  pull(unique(Species))
+etoh_species <- read.table('data/shotgun_data/ethanol_resistant_SGB.tsv', sep = '\t', header = T)
+sporulation_ability <- read.table('data/shotgun_data/sporulation_ability2021.tsv', sep = '\t', header = T)
 
-
-long_mpa <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
+long_mpa2 <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
   rename_with(~ str_remove(., '^profiled_'), starts_with('profiled_')) %>%
   filter(grepl('s__', clade_name), grepl('t__', clade_name)) %>% 
-  # left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, clade_name), by = 'clade_name') %>% 
-  # pivot_longer(-c(clade_name, PA, n_genes, sporulation_ability)) %>% 
   pivot_longer(-clade_name) %>% 
-  separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'),
+  separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'SGB'),
            sep="\\|") %>% 
   mutate(Phylum = ifelse(Phylum == 'p__Firmicutes', 'p__Bacillota', Phylum), 
          Domain = str_remove_all(Domain, 'k__'), 
@@ -215,11 +197,12 @@ long_mpa <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_t
          Order = str_remove_all(Order, 'o__'), 
          Family = str_remove_all(Family, 'f__'), 
          Genus = str_remove_all(Genus, 'g__'), 
-         Species = str_remove_all(Species, 's__')) %>% 
+         Species = str_remove_all(Species, 's__'), 
+         SGB = str_remove_all(SGB, 't__')) %>% 
   filter(name != 'MC013') %>% 
   filter(Domain == 'Bacteria') %>% 
-  #filter(!is.na(sporulation_ability)) %>%  
   left_join(metadata, by = join_by('name' == 'Group')) %>% 
+  filter(biota == 'untreated sample') %>% 
   mutate(Phylum = case_when(
     Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
     Phylum == 'Actinobacteria' ~ 'Actinomycetota',
@@ -234,11 +217,11 @@ long_mpa <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_t
     Phylum == 'Candidatus_Melainabacteria' ~ 'Candidatus Melainabacteria', 
     Phylum == 'Tenericutes' ~ 'Mycoplasmatota', 
     TRUE ~ Phylum )) %>% 
-  mutate(is_ethanol_resistant = ifelse(Species %in% etoh_species, 'Ethanol-resistant', 'Non ethanol-resistant')) %>% 
-  filter(biota == 'untreated sample')
-
-
-
+  left_join(select(etoh_species, SGB, is_ethanol_resistant), 'SGB') %>% 
+  mutate(Species = str_replace_all(Species, '_', ' ')) %>%  
+  left_join(select(sporulation_ability, n_genes, sporulation_ability, Species), by = 'Species')
+  
+ 
 add_for_comparison_mpa <- data.frame(is_ethanol_resistant = 'Ethanol-resistant',
                                      Phylum = 'Deferribacterota', 
                                      n_species = 0, 
@@ -246,7 +229,8 @@ add_for_comparison_mpa <- data.frame(is_ethanol_resistant = 'Ethanol-resistant',
                                      per = 0)
 
 # What if I look into ethanol resistant and spore-forming? 
-per_mpa <- long_mpa %>% 
+per_mpa <- long_mpa2 %>% 
+  filter(is_ethanol_resistant %in% c('Ethanol-resistant', 'Non ethanol-resistant')) %>% 
   group_by(is_ethanol_resistant, Phylum) %>%
   reframe(n_species = n_distinct(Species)) %>% 
   group_by(Phylum) %>%
@@ -254,8 +238,8 @@ per_mpa <- long_mpa %>%
          per = (n_species/sum)*100) %>% 
   rbind(add_for_comparison_mpa) %>% 
   mutate(Phylum = factor(Phylum, levels = c('unclassified Bacteria', 'Deferribacterota','Synergistota', 'Candidatus Melainabacteria', 'Mycoplasmatota','Chloroflexota', 
-                                             'Verrucomicrobiota','Saccharibacteria', 'Lentisphaerota', 'Fusobacteriota', 
-                                              'Pseudomonadota', 'Actinomycetota', 'Bacteroidota', 'Bacillota' ))) %>% 
+                                            'Verrucomicrobiota','Saccharibacteria', 'Lentisphaerota', 'Fusobacteriota', 
+                                            'Pseudomonadota', 'Actinomycetota', 'Bacteroidota', 'Bacillota' ))) %>% 
   ggplot(aes(x = per, y = Phylum)) + 
   geom_col(aes(fill = is_ethanol_resistant)) +
   geom_text(aes(label = n_species, x = per, y = Phylum), color = 'black', inherit.aes = F) +
@@ -288,6 +272,7 @@ per_mpa
 
 # paired t-test for each Phylum if percentages of eth-resist/non-resist differ between OTU and species data ž
 per_both <- long_mpa %>% 
+  filter(is_ethanol_resistant %in% c('Ethanol-resistant', 'Non ethanol-resistant')) %>% 
   group_by(is_ethanol_resistant, Phylum) %>%
   reframe(n_species = n_distinct(Species)) %>% 
   group_by(Phylum) %>%
@@ -312,83 +297,46 @@ t.test(filter(per_both, is_ethanol_resistant == 'Non ethanol-resistant')$per.x,
 
 
 # Which species are sopreforming? 
-long_mpa <- long_mpa %>%  
-  mutate(Species = str_replace_all(Species, '_', ' ')) %>% 
-  left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, Species), by = 'Species')
-  
-sporeforming <- long_mpa %>%  
-  group_by(sporulation_ability, Phylum) %>% 
-  reframe(n_species = n_distinct(Species))
-
-
-spore_per <- long_mpa %>% 
-  filter(Phylum == 'Bacillota', !is.na(sporulation_ability)) %>% 
+spore_per <- long_mpa2 %>% 
+  filter(Phylum == 'Bacillota' & is_ethanol_resistant %in% c('Ethanol-resistant', 'Non ethanol-resistant') &
+           !is.na(sporulation_ability)) %>% 
   group_by(is_ethanol_resistant, sporulation_ability, Phylum) %>%
   reframe(n_species = n_distinct(Species)) %>% 
   group_by(Phylum) %>%
   mutate(sum = sum(n_species), 
          per = (n_species/sum)*100) %>% 
+  mutate(is_ethanol_resistant = factor(is_ethanol_resistant, levels = c("Non ethanol-resistant", 'Ethanol-resistant'))) %>% 
   ggplot(aes(x = per, y = sporulation_ability)) + 
   geom_col(aes(fill = is_ethanol_resistant)) +
   geom_text(aes(label = n_species, x = per, y = sporulation_ability), color = 'black', inherit.aes = F) +
-  scale_fill_manual(values = c( '#f0a336', '#3CB371')) +
-  #scale_alpha_manual(values = c('Non-spore-former' = 1, 'Spore-former' = 0.5)) +
   labs(x = '% species', y = '', fill = '') +
+  scale_fill_manual(values = c('#3CB371', '#f0a336')) +
   theme_minimal(base_size = 12) +
   theme(legend.position = 'bottom', 
         plot.title   = element_text(size = 12),
         axis.title   = element_text(size = 12),
-        axis.text    = element_text(size = 11), 
+        axis.text    = element_text(size = 11, angle = 30),
         legend.text = element_text(size = 11)) +
-  guides(fill = "none") 
+  coord_flip()
 spore_per
+ggsave('out/figures/supplement_Bacillota.png', dpi=600)
 
 # Percentages for text 
-long_mpa %>% 
+long_mpa2 %>% 
   group_by(is_ethanol_resistant, sporulation_ability, Phylum) %>%
   reframe(n_species = n_distinct(Species)) %>% 
   group_by(Phylum) %>%
   mutate(sum = sum(n_species), 
          per = (n_species/sum)*100)
 
-unclas <- long_mpa %>%  filter(sporulation_ability == 'Spore-former', Phylum == 'unclassified Bacteria')
+long_mpa2 %>% filter(is_ethanol_resistant == 'Ethanol-resistant') %>% 
+  group_by(Phylum) %>% 
+  reframe(rel = sum(value)/n_distinct(name)) 
+
+unclas <- long_mpa2 %>%  filter(sporulation_ability == 'Spore-former', Phylum == 'unclassified Bacteria')
 
 # Ethanol-resistant without spore-forming 
-etoh_sgb <- read.table('data/shotgun_data/ethanol_resistant_SGB.tsv', sep = '\t', header = T)
-
-sgb <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
-  rename_with(~ str_remove(., '^profiled_'), starts_with('profiled_')) %>%
-  filter(grepl('t__', clade_name)) %>% 
-  pivot_longer(-c(clade_name)) %>% 
-  separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'SGB'),
-           sep="\\|") %>% 
-  mutate(Phylum = ifelse(Phylum == 'p__Firmicutes', 'p__Bacillota', Phylum), 
-         Domain = str_remove_all(Domain, 'k__'), 
-         Phylum = str_remove_all(Phylum, 'p__'), 
-         Class = str_remove_all(Class, 'c__'), 
-         Order = str_remove_all(Order, 'o__'), 
-         Family = str_remove_all(Family, 'f__'), 
-         Genus = str_remove_all(Genus, 'g__'), 
-         Species = str_remove_all(Species, 's__'), 
-         SGB = str_remove_all(SGB, 't__')) %>% 
-  filter(name != 'MC013') %>% 
-  left_join(metadata, by = join_by('name' == 'Group')) %>% 
-  mutate(Phylum = case_when(
-    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
-    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
-    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
-    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
-    Phylum == 'Verrucomicrobia' ~ 'Verrucomicrobiota',
-    Phylum == 'Chloroflexi' ~ 'Chloroflexota',
-    Phylum == 'Fusobacteria' ~ 'Fusobacteriota',
-    Phylum == 'Lentisphaerae' ~ 'Lentisphaerota',
-    Phylum == 'Synergistetes' ~ 'Synergistota',
-    Phylum == 'Candidatus_Saccharibacteria' ~ 'Saccharibacteria', 
-    TRUE ~ Phylum )) %>% 
-  mutate(is_ethanol_resistant = ifelse(SGB %in% etoh_sgb$SGB, 'Ethanol-resistant', 'Non ethanol-resistant')) %>% 
-  filter(biota == 'untreated sample') 
-
-sgb_etoh <- sgb %>% 
+sgb_etoh <- long_mpa2 %>% 
   group_by(is_ethanol_resistant, Phylum) %>%
   reframe(n_species = n_distinct(SGB), 
           rel = sum(value)/n_distinct(name)) %>% 
@@ -397,27 +345,18 @@ sgb_etoh <- sgb %>%
          per = (n_species/sum)*100, 
          rel = rel)
 
-sgb_spore <- sgb %>% 
-  mutate(Species = str_replace(Species, '_', ' ')) %>% 
-  left_join(select(sporulation_ability, sporulation_ability, Species), by = 'Species')
-
-sgb_spore %>% filter(value > 0) %>% 
+long_mpa2 %>% 
   group_by(sporulation_ability, name) %>% 
   reframe(rel = sum(value)) %>% 
   group_by(sporulation_ability) %>%  
   reframe(rel = mean(rel), 
           sd = sd(rel, na.rm = T))
 
-sgb_spore %>% filter(is.na(sporulation_ability)) %>% 
+long_mpa2 %>% filter(!is.na(sporulation_ability)) %>% 
   group_by(sporulation_ability, Phylum, name) %>% 
   reframe(rel = sum(value)) %>%  
   group_by(sporulation_ability, Phylum) %>%  
   reframe(mean = mean(rel))
-
-sgb_spore %>%  filter(is.na(sporulation_ability)) %>%  
-  group_by(sporulation_ability) %>%  
-  reframe(mean = mean(value), 
-          sd = sd(value))
 
 
 # Beta diversity 
@@ -469,8 +408,9 @@ beta_otu <- nmds_otu %>%
   left_join(metadata, by = 'Group') %>%  
   ggplot(aes(x = NMDS1, y = NMDS2, color = person)) +
   geom_point(size = 4) +
+  annotate("text", x = 0, y = 0.8, label = "PERMANOVA, p = 0.001",color = "black") +
   labs(x = '', y = '', color = 'Individual', title = '16S amplicon data') +
-  guides(color = guide_legend(nrow = 1)) +
+  guides(color = guide_legend(nrow = 9)) +
   theme_bw(base_size = 12) +
   theme(legend.position = 'bottom', 
         plot.title   = element_text(size = 12),
@@ -482,8 +422,9 @@ beta_mpa <- nmds_mpa %>%
   left_join(metadata, by = 'Group') %>%  
   ggplot(aes(x = NMDS1, y = NMDS2, color = person)) +
   geom_point(size = 4) +
+  annotate("text", x = 0, y = 0.8, label = "PERMANOVA, p = 0.001",color = "black") +
   labs(x = '', y = '', color = 'Individual', title = 'metagenomic data') +
-  guides(color = guide_legend(nrow = 1)) +
+  guides(color = guide_legend(nrow = 9)) +
   theme_bw(base_size = 12) +
   theme(legend.position = 'bottom', 
         plot.title   = element_text(size = 12),
@@ -553,24 +494,24 @@ proc_test
 # Figure 1 all together 
 fig1B <- ggarrange(per_otu, 
                    per_mpa + theme(axis.text.y = element_blank()),
-                   legend = 'bottom', common.legend = T, align = 'h', widths = c(1, .7))
+                   legend = 'none', align = 'h', widths = c(1, .7))
 
 fig1B
 
-beta_both <- ggarrange(beta_otu, beta_mpa, legend = 'bottom', 
+fig1A <- ggarrange(beta_otu, beta_mpa, legend = 'right', nrow = 2,
                        common.legend = T) 
-beta_both
+fig1A
 
-AC <- ggarrange(beta_both + labs(tag = 'A'), 
-                spore_per+ labs(tag = 'C'), 
-                nrow = 2, heights = c(1, 0.3))
+BC <- ggarrange(fig1B + labs(tag = 'B'), 
+                spore_per + labs(tag = 'C'), 
+                nrow = 1, widths = c(1, 0.2), common.legend = T, 
+                legend = 'bottom')
+BC
 
-AC
-
-ggarrange(AC, 
-          fig1B + labs(tag = 'B'), 
+ggarrange(fig1A + labs(tag = 'A'), 
+          BC, 
           common.legend = F, nrow = 1, 
-          widths = c(0.8, 1))
+          widths = c(0.6, 1))
 ggsave('out/figures/figure1_v2.svg', dpi=600)
 
 # Supplement Figure 
@@ -594,6 +535,7 @@ richness2 <- filter(bacteria, value > 0) %>%
   reframe(richness = n_distinct(SGB)) %>% 
   rename(Group = name)
 
+
 shannon2 <- diversity(tab, index = 'shannon')
 evenness2 <- diversity(tab)/log(specnumber(tab))
 
@@ -611,6 +553,7 @@ events <- read.table('data/extreme_event_data.csv', sep = ';', header = T)
 
 # Alpha diveristy PLOT 
 richness_plot <- alpha %>% 
+  filter(biota == 'untreated sample') %>% 
   ggplot(aes(x = day, y = richness, linetype = method, color = biota, )) +
   geom_rect(data = events, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = extremevent_type), inherit.aes = FALSE,
             alpha = 0.6) +
@@ -624,6 +567,7 @@ richness_plot
 ggsave('out/figures/richness.svg', dpi = 600)
 
 evenness_plot <-alpha %>% 
+  filter(biota == 'untreated sample') %>% 
   ggplot(aes(x = day, y = evenness, linetype = method, color = biota, )) +
   geom_rect(data = events, aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = extremevent_type), inherit.aes = FALSE,
             alpha = 0.6) +
@@ -641,11 +585,11 @@ ggarrange(richness_plot + labs(tag = 'A'),
           evenness_plot + labs(tag = 'B'), 
           common.legend = T, legend = 'right', 
           nrow = 2, align = 'v')
-ggsave('out/figures/supplement_alpha.svg', dpi=600)
+ggsave('out/figures/supplement_alpha.png', dpi=600)
 
 # Evennes and richness comparisons are in folder thesis/figures/
 
-# Statistics if alpha diversity is in accrodance between sequencing methods 
+# Statistics if alpha diversity is in accrodance between sequencing methods
 # Linear mixed-model - this takes into account the individuals (their points are not independant!)
 
 alpha_lme <- alpha_otu %>% left_join(alpha_mpa, by = 'Group') %>% 
@@ -657,174 +601,18 @@ summary(fit_rich)
 fit_even <- lmer(evenness.x ~ evenness.y + (1 | person), data = alpha_lme) 
 summary(fit_even)
 
+# Or Spearman for each individual? 
+alpha_stat <- filter(alpha_lme, biota == 'untreated sample')
 
-##
-# Shared OTUs and species 
-# Number of OTUs shared within person and between people
-# OTU is present in a person only if it is present in more than 11 timepoints 
-# Otherwise this analysis does not produce the same results, as too many OTUs are found by random 
+for (id in unique(alpha_stat$person)) {
+  tmp <- subset(alpha_stat, person == id, )
+  cat("\nPerson:", id, "\n")
+  print(cor.test(tmp$evenness.x, tmp$evenness.y, method = "spearman"))
+}
 
-n_otus <- long_otu %>% 
-  group_by(is_ethanol_resistant, person, name) %>%
-  reframe(present = sum(PA == 1)) %>%  
-  filter(present > 11) %>% 
-  group_by(is_ethanol_resistant) %>% 
-  reframe(n = n_distinct(name))
+for (id in unique(alpha_stat$person)) {
+  tmp <- subset(alpha_stat, person == id, )
+  cat("\nPerson:", id, "\n")
+  print(cor.test(tmp$richness.x, tmp$richness.y, method = "spearman"))
+}
 
-n_otus_people <- long_otu %>% mutate(time_point = as.integer(substr(Group, 3, 5))) %>%
-  group_by(is_ethanol_resistant, person, name) %>%
-  reframe(present = sum(PA == 1)) %>%  
-  filter(present > 11) %>% 
-  mutate(present = ifelse(present > 0, 1, 0)) %>% 
-  select(name, person, present, is_ethanol_resistant) %>% 
-  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
-  mutate(n_people = A+B+C+D+E+F+G+H+I, 
-         n_people = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
-  group_by(is_ethanol_resistant, n_people) %>% 
-  reframe(n_otu = n_distinct(name)) %>% 
-  left_join(n_otus, by = 'is_ethanol_resistant') %>% 
-  mutate(per_otu = (n_otu/n)*100) 
-
-n_otus_shared_plot <- n_otus_people %>% 
-  #mutate(n_people = factor(n_people, levels = c('Present in 1 individual', 'Present > 1 individual'))) %>% 
-  ggplot(aes(y = is_ethanol_resistant, x = per_otu, fill = n_people))+
-  geom_col() +
-  scale_fill_manual(values = c('#F2933F', '#3F9EF2')) +
-  labs(y = '', x = 'OTUs [%]', fill = '') +
-  theme(legend.position = 'bottom') +
-  guides(fill=guide_legend(nrow=1,byrow=TRUE))
-n_otus_shared_plot
-ggsave('out/figures/shared_otus.svg', dpi = 600)
-
-# SPECIES 
-long_mpa %>% 
-  mutate(time_point = as.integer(substr(name, 3, 5)), 
-         pa = ifelse(value > 0, 1, 0)) %>%
-  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
-  reframe(present = sum(pa)) %>%  
-  filter(present > 11) %>% 
-  mutate(present = ifelse(present > 0, 1, 0)) %>% 
-  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
-  mutate(n_people = A+B+C+D+E+F+G+H+I, 
-         shared = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
-  group_by(is_ethanol_resistant, sporulation_ability, shared) %>%  
-  reframe(n = n_distinct(Species)) %>%
-  group_by(is_ethanol_resistant, sporulation_ability) %>%
-  mutate(prop = 100 * n / sum(n)) %>% 
-  ggplot(aes(y = paste0(is_ethanol_resistant,sporulation_ability), x = prop, fill = shared)) +
-  geom_col(position = "fill") + 
-  scale_fill_manual(values = c('#F2933F', '#3F9EF2')) +
-  scale_x_continuous(labels = scales::percent) +
-  labs(y = "", x = "Species (%)", fill = '') +
-  theme(legend.position = 'bottom') +
-  guides(fill=guide_legend(nrow=1,byrow=TRUE))
-ggsave('out/figures/etoh_spore_shared_mpa.png', dpi=600)
-
-
-n_species_shared_plot <- long_mpa %>% 
-  mutate(time_point = as.integer(substr(name, 3, 5)), 
-         pa = ifelse(value > 0, 1, 0)) %>%
-  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
-  reframe(present = sum(pa)) %>%  
-  filter(present > 11) %>% 
-  mutate(present = ifelse(present > 0, 1, 0)) %>% 
-  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
-  mutate(n_people = A+B+C+D+E+F+G+H+I, 
-         shared = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
-  group_by(is_ethanol_resistant, sporulation_ability, shared) %>%  
-  reframe(n = n_distinct(Species)) %>%
-  group_by(is_ethanol_resistant) %>%
-  mutate(prop = 100 * n / sum(n)) %>% 
-  ggplot(aes(y = paste0(is_ethanol_resistant, sporulation_ability), x = prop, fill = shared)) +
-  geom_col(position = "fill") + 
-  #geom_text(aes(x = prop/2,label = n)) +
-  scale_fill_manual(values = c('#F2933F', '#3F9EF2')) +
-  scale_x_continuous(labels = scales::percent) +
-  labs(y = "", x = "Species (%)", fill = '') +
-  theme(legend.position = 'bottom') +
-  guides(fill=guide_legend(nrow=1,byrow=TRUE))
-n_species_shared_plot
-
-# For the table of ethanol-resistant and spore-forming sharing 
-long_mpa %>% 
-  mutate(time_point = as.integer(substr(name, 3, 5)), 
-         pa = ifelse(value > 0, 1, 0)) %>%
-  group_by(sporulation_ability, is_ethanol_resistant, person, Species) %>%
-  reframe(present = sum(pa)) %>%  
-  filter(present > 11) %>% 
-  mutate(present = ifelse(present > 0, 1, 0)) %>% 
-  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
-  mutate(n_people = A+B+C+D+E+F+G+H+I, 
-         shared = ifelse(n_people == 1, 'Present in 1 individual', 'Present > 1 individual')) %>% 
-  group_by(sporulation_ability, is_ethanol_resistant, shared) %>%  
-  reframe(n = n_distinct(Species))
-
-
-ggarrange(n_otus_shared_plot + labs(tag = 'A'), 
-          n_species_shared_plot + labs(tag = 'B'), common.legend = TRUE, 
-          legend = 'bottom', align = 'hv')
-ggsave('out/figures/shared_otu_mpa.svg', dpi = 600)
-
-# Fisher's exact test
-otu_shared <- long_otu %>% mutate(time_point = as.integer(substr(Group, 3, 5))) %>%
-  group_by(is_ethanol_resistant, person, name) %>%
-  reframe(present = sum(PA == 1)) %>%  
-  filter(present > 11) %>% 
-  mutate(present = ifelse(present > 0, 1, 0)) %>% 
-  select(name, person, present, is_ethanol_resistant) %>% 
-  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
-  mutate(n_people = A+B+C+D+E+F+G+H+I, 
-         n_people = ifelse(n_people == 1, '1individual', '>1individual')) %>% 
-  group_by(is_ethanol_resistant, n_people) %>% 
-  reframe(n_otu = n_distinct(name)) %>%  
-  pivot_wider(names_from = 'n_people', values_from = 'n_otu') %>% 
-  column_to_rownames("is_ethanol_resistant") 
-
-fisher.test(otu_shared)
-
-# Fisher's Exact Test for Count Data
-# 
-# data:  otu_shared
-# p-value = 7.036e-05
-# alternative hypothesis: true odds ratio is not equal to 1
-# 95 percent confidence interval:
-#  0.3567042 0.7207195
-# sample estimates:
-# odds ratio 
-#  0.5087137 
-
-
-species_shared <- long_mpa %>% 
-  mutate(time_point = as.integer(substr(name, 3, 5)), 
-         pa = ifelse(value > 0, 1, 0)) %>%
-  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
-  reframe(present = sum(pa)) %>%  
-  filter(present > 11) %>% 
-  mutate(present = ifelse(present > 0, 1, 0)) %>% 
-  pivot_wider(names_from = 'person', values_from = 'present', values_fill = 0) %>%  
-  mutate(n_people = A+B+C+D+E+F+G+H+I, 
-         shared = ifelse(n_people == 1, '1individual', '>1individual')) %>% 
-  group_by(is_ethanol_resistant, sporulation_ability, shared) %>%  
-  reframe(n = n_distinct(Species)) %>% 
-  pivot_wider(names_from = 'shared', values_from = 'n') %>% 
-  mutate(etoh_spore = paste0(is_ethanol_resistant, sporulation_ability)) %>% 
-  select(-c(is_ethanol_resistant, sporulation_ability)) %>% 
-  column_to_rownames("etoh_spore") 
-
-# do proportion of species present in >1 individual differs among the 4 communities?
-chisq.test(species_shared)
-# p < 0.001 = YES 
-
-# All pairwise combinations of rows
-combs <- combn(rownames(species_shared), 2, simplify = FALSE)
-
-pvals <- sapply(combs, function(pair) {
-  sub_tab <- species_shared[pair, , drop = FALSE]
-  fisher.test(sub_tab)$p.value
-})
-
-names(pvals) <- sapply(combs, paste, collapse = "_vs_")
-
-# Raw and adjusted p-values (Benjamini–Hochberg)
-pvals
-p.adjust(pvals, method = "BH")
