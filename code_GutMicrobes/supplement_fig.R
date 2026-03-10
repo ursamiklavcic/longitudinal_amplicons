@@ -1,3 +1,17 @@
+
+#
+library(readr)
+library(tidyr)
+library(dplyr)
+library(tibble)
+library(vegan)
+library(ggpubr)
+library(purrr)
+library(stringr)
+library(ggplot2)
+
+
+
 # Supplement Figure not removing any species 
 
 etoh_species <- read.table('data/shotgun_data/ethanol_resistant_SGB.tsv', sep = '\t', header = T)
@@ -85,3 +99,26 @@ per_mpa <- long_mpa %>%
         axis.text    = element_text(size = 11), 
         legend.text = element_text(size = 11)) +
   ggtitle('metagenomic data')
+
+
+
+
+# Relative abundances of every group: 
+long_mpa <- readRDS('data/r_data/long_mpa.RDS')
+
+long_mpa %>%  
+  filter(!is.na(person)) %>% 
+  ggplot(aes(x = sporulation_ability, y = value, fill = is_ethanol_resistant)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  scale_fill_manual(values = c( '#f0a336', '#3CB371', 'grey')) +
+  facet_wrap(~person, scales = 'free') +
+  labs(x = '', y = 'Relative abundance [%]', fill = '') +
+  theme_bw(base_size = 12) +
+  theme(legend.position = 'bottom', 
+        plot.title   = element_text(size = 12),
+        axis.title   = element_text(size = 12),
+        axis.text    = element_text(size = 11), 
+        legend.text = element_text(size = 11)) 
+
+ggsave('out/figures/supplement_relative_abundance.png')
