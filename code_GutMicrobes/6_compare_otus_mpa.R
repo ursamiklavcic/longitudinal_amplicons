@@ -257,6 +257,12 @@ spore_per <- long_mpa %>%
   coord_flip()
 spore_per
 
+# How many non-sporeforming bacteria in Bacillota and other phyla?
+long_mpa %>% filter(sporulation_ability == 'Non-spore-former', value > 0) %>% 
+  group_by(Phylum) %>% 
+  reframe(n = n_distinct(Species))
+  
+
 
 spore_stat <- long_mpa %>% 
   filter(Phylum == 'Bacillota' & is_ethanol_resistant %in% c('Ethanol-resistant', 'Non ethanol-resistant') &

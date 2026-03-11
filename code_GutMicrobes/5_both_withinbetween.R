@@ -636,14 +636,15 @@ persistence_otu_stat <- long_otu %>%
           timepoints_present = sum(PA)) %>%
   # Remove 'singletons'
   filter(timepoints_present > 1) %>%
-  mutate(prevalence = (timepoints_present/all_timepoints)*100)
+  mutate(prevalence = (timepoints_present/all_timepoints)*100) 
 
-fit3 <-  lmer(prevalence ~ is_ethanol_resistant + (1 | person), data = persistence_otu_stat)
-summary(fit3)  
+wilcox.test(prevalence ~ is_ethanol_resistant, data = persistence_otu_stat,
+            exact = FALSE, conf.int = TRUE) 
+# W = 12883706, p-value < 2.2e-16
 
 # Metagenomic data 
 persistence_mpa_stat <- long_mpa %>%
-  filter(biota == 'untreated sample') %>% 
+  filter(biota == 'untreated sample', !is.na(sporulation_ability)) %>% 
   mutate(time_point = as.integer(substr(name, 3, 5)), 
          pa = ifelse(value > 0, 1, 0)) %>%
   group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>%
@@ -651,11 +652,33 @@ persistence_mpa_stat <- long_mpa %>%
           timepoints_present = sum(pa)) %>%
   # Remove 'singletons'
   filter(timepoints_present > 1) %>%
-  mutate(prevalence = (timepoints_present/all_timepoints)*100)
+  mutate(prevalence = (timepoints_present/all_timepoints)*100) %>% 
+  mutate(group = interaction(is_ethanol_resistant, sporulation_ability, sep = " "))
 
+pairwise.wilcox.test(x = persistence_mpa_stat$prevalence,
+                     g = persistence_mpa_stat$group,
+                     p.adjust.method = "BH" )
 
-fit2 <- lmer(prevalence ~ is_ethanol_resistant * sporulation_ability + (1 | person), data = persistence_mpa_stat)
-summary(fit2)  
+kruskal.test()
+# Pairwise comparisons using Wilcoxon rank sum test with continuity correction 
+# 
+# data:  persistence_mpa_stat$frac_high_persist and persistence_mpa_stat$group 
+# 
+#                                        Ethanol-resistant Non-spore-former
+# Non ethanol-resistant Non-spore-former 0.0408                            
+# Ethanol-resistant Spore-former         0.0032                            
+# Non ethanol-resistant Spore-former     0.0622                            
+#                                         Non ethanol-resistant Non-spore-former
+# Non ethanol-resistant Non-spore-former  -                                     
+# Ethanol-resistant Spore-former          0.0040                                
+# Non ethanol-resistant Spore-former      0.5074                                
+#                                        Ethanol-resistant Spore-former
+# Non ethanol-resistant Non-spore-former  -                             
+# Ethanol-resistant Spore-former          -                             
+# Non ethanol-resistant Spore-former      0.0024                 
+                      
+# 
+# P value adjustment method: BH 
 
 # Shared 
 # OTUs 
@@ -896,3 +919,14 @@ long_mpa %>%
   geom_boxplot() +
   scale_y_log10()
 ggsave('out/figures/rel_abund_mpa_all_groups.png')
+
+# For thesis
+ggarrange(ggarrange(within_between_otu + labs(tag = 'A'),
+                    plot_persist_otu + labs(tag = 'C'), 
+                    legend = 'none', nrow = 1),
+          ggarrange(within_between_mpa_v2 + labs(tag = 'B'), 
+                    plot_persist_mpa + labs(tag = 'D'), 
+                    legend = 'bottom', nrow = 1), 
+          ncol = 1, 
+          heights = c(.8, 1))
+ggsave('out/figures/figure_thesis.svg', dpi=600)

@@ -10,110 +10,27 @@ library(purrr)
 library(stringr)
 library(ggplot2)
 
-
-
-# Supplement Figure not removing any species 
-
-etoh_species <- read.table('data/shotgun_data/ethanol_resistant_SGB.tsv', sep = '\t', header = T)
-sporulation_ability <- read.table('data/shotgun_data/sporulation_ability2021.tsv', sep = '\t', header = T)
-
-long <- read_tsv('~/projects/longitudinal_shotgun/data/metaphlan_abundance_table.txt', comment = '#') %>%
-  rename_with(~ str_remove(., '^profiled_'), starts_with('profiled_')) %>%
-  filter(grepl('s__', clade_name), grepl('t__', clade_name)) %>% 
-  # left_join(select(sporulation_ability, n_genes, PA, sporulation_ability, clade_name), by = 'clade_name') %>% 
-  # pivot_longer(-c(clade_name, PA, n_genes, sporulation_ability)) %>% 
-  pivot_longer(-clade_name) %>% 
-  separate(clade_name, into=c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'),
-           sep="\\|") %>% 
-  mutate(Phylum = ifelse(Phylum == 'p__Firmicutes', 'p__Bacillota', Phylum), 
-         Domain = str_remove_all(Domain, 'k__'), 
-         Phylum = str_remove_all(Phylum, 'p__'), 
-         Class = str_remove_all(Class, 'c__'), 
-         Order = str_remove_all(Order, 'o__'), 
-         Family = str_remove_all(Family, 'f__'), 
-         Genus = str_remove_all(Genus, 'g__'), 
-         Species = str_remove_all(Species, 's__')) %>% 
-  filter(name != 'MC013') %>% 
-  filter(Domain == 'Bacteria') %>% 
-  #filter(!is.na(sporulation_ability)) %>%  
-  left_join(metadata, by = join_by('name' == 'Group')) %>% 
-  filter(biota == 'untreated sample') %>%
-  left_join(etoh_species,by = c('Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'), relationship = 'many-to-many') %>% 
-  mutate(Phylum = case_when(
-    Phylum == 'Bacteroidetes' ~ 'Bacteroidota',
-    Phylum == 'Actinobacteria' ~ 'Actinomycetota',
-    Phylum == 'Proteobacteria' ~ 'Pseudomonadota',
-    Phylum == 'Bacteria_unclassified' ~ 'unclassified Bacteria',
-    Phylum == 'Verrucomicrobia' ~ 'Verrucomicrobiota',
-    Phylum == 'Chloroflexi' ~ 'Chloroflexota',
-    Phylum == 'Fusobacteria' ~ 'Fusobacteriota',
-    Phylum == 'Lentisphaerae' ~ 'Lentisphaerota',
-    Phylum == 'Synergistetes' ~ 'Synergistota',
-    Phylum == 'Candidatus_Saccharibacteria' ~ 'Saccharibacteria', 
-    Phylum == 'Candidatus_Melainabacteria' ~ 'Candidatus Melainabacteria', 
-    Phylum == 'Tenericutes' ~ 'Mycoplasmatota', 
-    TRUE ~ Phylum )) %>% 
-  
-
-add_for_comparison_mpa <- data.frame(is_ethanol_resistant = 'Ethanol-resistant',
-                                     Phylum = 'Deferribacterota', 
-                                     n_species = 0, 
-                                     sum = 0, 
-                                     per = 0)
-
-per_mpa <- long_mpa %>% 
-  group_by(is_ethanol_resistant, Phylum) %>%
-  reframe(n_species = n_distinct(Species)) %>% 
-  group_by(Phylum) %>%
-  mutate(sum = sum(n_species), 
-         per = (n_species/sum)*100) %>% 
-  rbind(add_for_comparison_mpa) %>% 
-  mutate(Phylum = factor(Phylum, levels = c('unclassified Bacteria', 'Deferribacterota','Synergistota', 'Candidatus Melainabacteria', 'Mycoplasmatota','Chloroflexota', 
-                                            'Verrucomicrobiota','Saccharibacteria', 'Lentisphaerota', 'Fusobacteriota', 
-                                            'Pseudomonadota', 'Actinomycetota', 'Bacteroidota', 'Bacillota' ))) %>% 
-  ggplot(aes(x = per, y = Phylum)) + 
-  geom_col(aes(fill = is_ethanol_resistant)) +
-  geom_text(aes(label = n_species, x = per, y = Phylum), color = 'black', inherit.aes = F) +
-  scale_fill_manual(values = c( '#f0a336', '#3CB371', 'grey')) +
-  #scale_alpha_manual(values = c('Non-spore-former' = 1, 'Spore-former' = 0.5)) +
-  labs(x = '% species', y = '', fill = '') +
-  scale_y_discrete(labels = c(
-    expression("unclassified " * italic("Bacteria")),
-    expression(italic("Deferribacterota")),
-    expression(italic("Synergistota")),
-    expression(italic("Candidatus") * " Melainabacteria"),
-    expression(italic("Mycoplasmatota")), 
-    expression(italic("Chloroflexota")),
-    expression(italic("Verrucomicrobiota")),
-    expression(italic("Saccharibacteria")),
-    expression(italic("Lentisphaerota")),
-    expression(italic("Fusobacterium")),
-    expression(italic("Pseudomonadota")),
-    expression(italic("Actinomycetota")),
-    expression(italic("Bacteroidota")),
-    expression(italic("Bacillota")))) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = 'bottom', 
-        plot.title   = element_text(size = 12),
-        axis.title   = element_text(size = 12),
-        axis.text    = element_text(size = 11), 
-        legend.text = element_text(size = 11)) +
-  ggtitle('metagenomic data')
-
-
-
-
 # Relative abundances of every group: 
 long_mpa <- readRDS('data/r_data/long_mpa.RDS')
 
 long_mpa %>%  
-  filter(!is.na(person)) %>% 
-  ggplot(aes(x = sporulation_ability, y = value, fill = is_ethanol_resistant)) +
+  filter(is_ethanol_resistant %in% c('Ethanol-resistant', 'Non ethanol-resistant'), 
+         !is.na(sporulation_ability)) %>% 
+  group_by(is_ethanol_resistant, sporulation_ability, person, Species) %>% 
+  reframe(value = mean(value)) %>%  
+  ggplot(aes(x = paste0(is_ethanol_resistant,' ' ,sporulation_ability), y = value)) +
   geom_boxplot() +
   scale_y_log10() +
-  scale_fill_manual(values = c( '#f0a336', '#3CB371', 'grey')) +
-  facet_wrap(~person, scales = 'free') +
-  labs(x = '', y = 'Relative abundance [%]', fill = '') +
+  stat_compare_means(method = 'wilcox', p.adjust.method = "BH", comparisons = list(
+    c("Ethanol-resistant Non-spore-former", "Non ethanol-resistant Non-spore-former"),
+    c("Ethanol-resistant Non-spore-former", "Non ethanol-resistant Spore-former"),
+    c("Ethanol-resistant Non-spore-former", "Ethanol-resistant Spore-former"),
+    c("Ethanol-resistant Spore-former", "Non ethanol-resistant Spore-former"),
+    c("Ethanol-resistant Spore-former", "Non ethanol-resistant Non-spore-former"),
+    c("Non ethanol-resistant Spore-former", "Non ethanol-resistant Non-spore-former"))) +
+  #scale_fill_manual(values = c( '#f0a336', '#3CB371', 'grey')) +
+  #facet_wrap(~is_ethanol_resistant, scales = 'free') +
+  labs(x = '', y = 'Relative abundance [%]') +
   theme_bw(base_size = 12) +
   theme(legend.position = 'bottom', 
         plot.title   = element_text(size = 12),
@@ -121,4 +38,48 @@ long_mpa %>%
         axis.text    = element_text(size = 11), 
         legend.text = element_text(size = 11)) 
 
-ggsave('out/figures/supplement_relative_abundance.png')
+ggsave('out/figures/supplement_relative_abundance.svg', dpi=600)
+
+# Are ethanol-resistant spore-formers trully the highest? 
+library(emmeans)
+
+# Define four-group factor
+long_mpa$group <- with(long_mpa,
+                       interaction(is_ethanol_resistant, sporulation_ability,
+                                   sep = " "))
+
+# Fit model on log10 abundance
+fit <- aov(value ~ group, data = long_mpa)
+
+emm <- emmeans(fit, ~ group)
+
+# See the order of groups
+emm
+
+# Identify the ethanol-resistant spore-formers row, e.g. "Ethanol-resistant spore"
+which(levels(long_mpa$group) == "Ethanol-resistant Spore-former")
+
+# Compare all other groups to that reference (Dunnett-style, two-sided by default)
+contrast(emm, method = "trt.vs.ctrl",
+         ref = which(levels(long_mpa$group) == "Ethanol-resistant Spore-former"),
+         adjust = "none")  # or "dunnet" / "holm", etc.
+
+
+# Supplement Figure GENES
+table <- read.table('data/gene_genome_spore_etoh.tsv', sep = '\t', header= T) %>% 
+  mutate(Species = Species.y) %>% 
+  select(-c(Species.y, Species.x))
+
+table %>%  
+  filter(is_ethanol_resistant %in% c('Ethanol-resistant', 'Non ethanol-resistant')) %>% 
+  arrange(is_ethanol_resistant, Species) %>% 
+  mutate(Species = factor(Species, levels = unique(Species))) %>% 
+  ggplot(aes(x = gene_name, y = Species, fill = is_ethanol_resistant)) +
+  geom_tile() +
+  labs(x = '', y = '', fill = '') +
+  facet_wrap(~sporulation_ability, scales = 'free') +
+  theme(axis.text.x = element_text(angle = 90, size = 8), 
+        axis.text.y = element_text(size = 4), 
+        legend.position = 'top', 
+        legend.text = element_text(size = 8))
+ggsave('out/figures/supplement8.svg', dpi=600, )
